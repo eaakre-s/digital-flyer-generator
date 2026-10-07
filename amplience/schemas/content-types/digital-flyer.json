@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scheels.com/contentTypes/digital-flyer",
+
+  "title": "Digital Flyer",
+  "description": "Shoppable sale flyer: the PDF's pages as images with clickable product hotspots. Pages and hotspots come from Flyer Studio.",
+
+  "allOf": [{ "$ref": "http://bigcontent.io/cms/schema/v1/core#/definitions/content" }],
+
+  "type": "object",
+  "properties": {
+    "title": {
+      "title": "Title",
+      "type": "string",
+      "maxLength": 80
+    },
+    "campaign": {
+      "title": "Campaign code",
+      "description": "Lowercase UTM campaign, e.g. biggame26.",
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "startDate": {
+      "title": "Sale starts",
+      "type": "string",
+      "format": "date-time"
+    },
+    "endDate": {
+      "title": "Sale ends",
+      "type": "string",
+      "format": "date-time"
+    },
+    "disclaimer": {
+      "title": "Disclaimer",
+      "type": "string",
+      "format": "markdown"
+    },
+    "pdfUrl": {
+      "title": "Flyer PDF",
+      "description": "Optional. Static URL of the source PDF in ECOM Creative > Content Pages > Digital Flyers, for reference.",
+      "type": "string",
+      "format": "uri"
+    },
+    "pages": {
+      "title": "Pages",
+      "description": "Imported from Flyer Studio.",
+      "type": "array",
+      "ui:extension": { "name": "flyer-import" },
+      "items": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "title": "Page image",
+            "allOf": [{ "$ref": "http://bigcontent.io/cms/schema/v1/core#/definitions/image-link" }]
+          },
+          "hotspots": {
+            "title": "Hotspots",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "box", "fallback"],
+              "properties": {
+                "label": { "title": "Product", "type": "string" },
+                "priceText": { "title": "Price as printed", "type": "string" },
+                "box": {
+                  "title": "Box (% of page)",
+                  "type": "object",
+                  "required": ["x", "y", "w", "h"],
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "w": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "h": { "type": "number", "minimum": 0, "maximum": 100 }
+                  }
+                },
+                "skus": {
+                  "title": "SKUs",
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "objectIds": {
+                  "title": "Scheels Search product ids",
+                  "description": "objectID of each matched product, used by the product drawer.",
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "fallback": {
+                  "title": "Link when no SKU is online",
+                  "type": "object",
+                  "required": ["type", "value"],
+                  "properties": {
+                    "type": { "type": "string", "enum": ["brand", "category", "search"] },
+                    "value": { "type": "string" }
+                  }
+                },
+                "locked": { "title": "Edited by hand", "type": "boolean" },
+                "confidence": { "type": "string", "enum": ["high", "low"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["title", "campaign", "startDate", "endDate", "pages"],
+  "propertyOrder": ["title", "campaign", "startDate", "endDate", "disclaimer", "pdfUrl", "pages"]
+}

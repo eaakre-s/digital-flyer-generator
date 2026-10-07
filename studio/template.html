@@ -1,0 +1,803 @@
+<title>Flyer Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EEECE8; --panel:#FFFFFF; --panel-2:#F6F5F2; --ink:#1C1F1D; --ink-2:#5A605C; --line:#D6D2CB;
+  --red:#DA1A32; --red-ink:#FFFFFF; --red-soft:#FBE3E6;
+  --ok:#1F7A4D; --ok-soft:#DDEFE4; --warn:#A85A00; --warn-soft:#FBEBD6; --bad:#B4162B; --bad-soft:#F8DCE0;
+  --focus:#1E5AAA; --shadow:rgba(28,31,29,.18);
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif; --body:"Barlow",Arial,Helvetica,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141615; --panel:#1E2120; --panel-2:#252927; --ink:#ECEDEB; --ink-2:#A3AAA6; --line:#343A37;
+  --red:#F0475C; --red-ink:#FFFFFF; --red-soft:#3A1C21;
+  --ok:#6FD39E; --ok-soft:#1B3427; --warn:#F2A54A; --warn-soft:#3A2A16; --bad:#FF7A8A; --bad-soft:#3E1C22;
+  --focus:#7FB0EE; --shadow:rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141615; --panel:#1E2120; --panel-2:#252927; --ink:#ECEDEB; --ink-2:#A3AAA6; --line:#343A37;
+  --red:#F0475C; --red-ink:#FFFFFF; --red-soft:#3A1C21;
+  --ok:#6FD39E; --ok-soft:#1B3427; --warn:#F2A54A; --warn-soft:#3A2A16; --bad:#FF7A8A; --bad-soft:#3E1C22;
+  --focus:#7FB0EE; --shadow:rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body)}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr) 320px;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:100%;padding-inline:16px;padding-block:12px 16px;max-width:1700px;margin:0 auto}
+header.top{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between}
+.brand h1{font:800 30px/1 var(--display);margin:0;letter-spacing:.01em;text-transform:uppercase}
+.brand h1 span{color:var(--red)}
+.brand p{margin:4px 0 0;color:var(--ink-2);font-size:13px;max-width:60ch}
+.files{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filebtn{position:relative;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);padding:8px 12px;border-radius:6px;font-weight:600;cursor:pointer}
+.filebtn:hover{border-color:var(--ink-2)}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.filebtn:focus-within{outline:3px solid var(--focus);outline-offset:2px}
+.filebtn small{font-weight:500;color:var(--ink-2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel);padding:8px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px}
+.btn:hover:not(:disabled){border-color:var(--ink-2)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--red);border-color:var(--red);color:var(--red-ink)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.details{grid-column:1/-1;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+label.f input,label.f select,label.f textarea{text-transform:none;letter-spacing:0;font-weight:500;font-size:14px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 9px;width:100%}
+label.f textarea{min-height:56px;resize:vertical}
+.mono{font-family:var(--mono);font-size:13px}
+aside.rail,aside.inspector{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-height:0;display:flex;flex-direction:column}
+.rail h2,.inspector h2{font:700 18px/1 var(--display);text-transform:uppercase;letter-spacing:.03em;margin:0;padding:12px 12px 8px}
+.rail .gen{display:flex;flex-direction:column;gap:8px;padding:0 12px 12px;border-bottom:1px solid var(--line)}
+.rail .gen .row{display:flex;gap:6px}
+.rail .gen .row .btn{flex:1}
+.pagelist{list-style:none;margin:0;padding:6px;overflow:auto;flex:1;min-height:120px;max-height:62vh}
+.pagelist button{width:100%;display:grid;grid-template-columns:44px 1fr;gap:2px 8px;text-align:left;border:0;background:none;padding:7px 8px;border-radius:6px;cursor:pointer}
+.pagelist button:hover{background:var(--panel-2)}
+.pagelist button[aria-current="true"]{background:var(--red-soft)}
+.pagelist .pn{grid-row:1/span 2;font:700 20px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.pagelist .st{font-size:12px;color:var(--ink-2)}
+.chip{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--panel-2);color:var(--ink-2)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.bad{background:var(--bad-soft);color:var(--bad)}.chip.work{background:var(--red-soft);color:var(--red)}
+main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.toolbar .left,.toolbar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pagetitle{font:700 22px/1 var(--display);text-transform:uppercase}
+.banner{background:var(--warn-soft);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px}
+.banner b{color:var(--warn)}
+.status{font-size:14px;color:var(--ink-2);min-height:20px}
+.status.err{color:var(--bad)}
+.sheetwrap{display:flex;justify-content:center;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
+.sheet{position:relative;width:100%;max-width:820px;box-shadow:0 8px 24px var(--shadow);background:#fff;touch-action:none;user-select:none}
+.sheet img{display:block;width:100%;height:auto;pointer-events:none}
+.sheet.drawing{cursor:crosshair}
+.empty{display:grid;place-items:center;aspect-ratio:645/762;color:var(--ink-2);font-size:14px;text-align:center;padding:24px}
+.hs{position:absolute;border:2px solid var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent);border-radius:3px;cursor:move}
+.hs.low{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.hs.problem{border-style:dashed;border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.hs.locked::before{content:"✎";position:absolute;right:3px;top:1px;font-size:12px;color:var(--ink)}
+.hs .n{position:absolute;left:0;top:0;background:var(--ok);color:#fff;font:700 12px/1 var(--body);padding:3px 5px;border-radius:0 0 3px 0}
+.hs.low .n{background:var(--warn)}.hs.problem .n{background:var(--bad)}
+.hs[aria-pressed="true"]{outline:3px solid var(--focus);outline-offset:1px;z-index:2}
+.hs .grip{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--focus);border:2px solid #fff;border-radius:2px;cursor:nwse-resize;display:none}
+.hs[aria-pressed="true"] .grip{display:block}
+.draft{position:absolute;border:2px dashed var(--focus);background:color-mix(in srgb,var(--focus) 12%,transparent);pointer-events:none}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.inspector .body{padding:0 12px 12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.inspector .hint{color:var(--ink-2);font-size:14px;margin:0}
+.inspector .problems{margin:0;padding-left:18px;color:var(--bad);font-size:13px}
+.inspector .note{font-size:13px;color:var(--ink-2);background:var(--panel-2);border-radius:5px;padding:8px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.export{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px}
+.export p{margin:0;font-size:13px;color:var(--ink-2)}
+.summary{font-size:13px;color:var(--ink-2)}
+.linkbtn{border:0;background:none;padding:0;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
+.guide{border:1px solid var(--line);border-radius:10px;padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--panel);color:var(--ink);box-shadow:0 24px 60px var(--shadow)}
+.guide::backdrop{background:rgba(0,0,0,.4)}
+.guidehead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+.guidehead h2{font:800 24px/1 var(--display);text-transform:uppercase;margin:0}
+.guidebody{padding:14px 18px 20px;overflow:auto;font-size:15px}
+.guidebody p{margin:6px 0;max-width:68ch}
+.guidebody .lead{color:var(--ink-2)}
+.guidebody code{font-family:var(--mono);font-size:13px;background:var(--panel-2);padding:1px 5px;border-radius:3px}
+.steps{margin:12px 0 0;padding-left:0;list-style:none;counter-reset:step;display:flex;flex-direction:column;gap:14px}
+.steps>li{counter-increment:step;display:grid;grid-template-columns:34px 1fr;column-gap:10px}
+.steps>li::before{content:counter(step);grid-row:1/span 9;font:800 26px/1 var(--display);color:var(--red)}
+.steps h3,.guidebody h3.sub{margin:0;font:700 19px/1.1 var(--display);text-transform:uppercase}
+.guidebody h3.sub{margin-top:20px}
+.steps ul{margin:4px 0;padding-left:18px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)}aside.inspector{grid-column:1/-1}}
+@media (max-width:760px){.app{grid-template-columns:minmax(0,1fr)}.details{grid-template-columns:1fr 1fr}.pagelist{max-height:220px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Flyer <span>Studio</span></h1>
+      <p>Turn a sale flyer PDF into shoppable hotspots for the Amplience Digital Flyer. Claude drafts the boxes; you check and fix them, then save the page images and flyer data.</p>
+    </div>
+    <div class="files">
+      <button class="btn" id="guideBtn" type="button" aria-haspopup="dialog">How to publish a flyer</button>
+      <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
+      <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
+    </div>
+  </header>
+
+  <section class="details" aria-label="Flyer details">
+    <label class="f">Title<input id="fTitle" type="text" placeholder="Big Game Sale"></label>
+    <label class="f">Campaign code<input id="fCampaign" class="mono" type="text" placeholder="biggame26" pattern="[a-z0-9_-]+"></label>
+    <label class="f">Sale starts<input id="fStart" type="date"></label>
+    <label class="f">Sale ends<input id="fEnd" type="date"></label>
+  </section>
+
+  <aside class="rail" aria-label="Pages">
+    <h2>Pages</h2>
+    <div class="gen">
+      <label class="f">Pages to generate<input id="range" class="mono" type="text" placeholder="all, or 2-10, 26"></label>
+      <div class="row">
+        <button class="btn primary" id="genBtn" type="button" disabled>Generate</button>
+        <button class="btn" id="stopBtn" type="button" hidden>Stop</button>
+      </div>
+      <div class="summary" id="genHint" role="status"></div>
+      <div class="summary" id="summary"></div>
+    </div>
+    <ol class="pagelist" id="pageList"></ol>
+  </aside>
+
+  <main class="stage">
+    <div class="banner" id="exampleBanner"><b>Example.</b> Big Game page 26 with the hotspots Claude drafted. Open a flyer PDF to start your own; this example is not saved or exported. New here? <button class="linkbtn" id="guideBtn2" type="button">Read the steps</button>.</div>
+    <div class="toolbar">
+      <div class="left">
+        <button class="btn" id="prevBtn" type="button" aria-label="Previous page">‹</button>
+        <span class="pagetitle" id="pageTitle">Page 26</span>
+        <button class="btn" id="nextBtn" type="button" aria-label="Next page">›</button>
+      </div>
+      <div class="right">
+        <button class="btn" id="genPageBtn" type="button" disabled>Generate this page</button>
+        <button class="btn" id="drawBtn" type="button" aria-pressed="false">Draw box</button>
+      </div>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="sheetwrap"><div class="sheet" id="sheet"></div></div>
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>High confidence</span>
+      <span><i style="background:var(--warn)"></i>Check this one</span>
+      <span><i style="background:var(--bad)"></i>Problem found</span>
+      <span>✎ Edited by hand (kept when you regenerate)</span>
+    </div>
+  </main>
+
+  <aside class="inspector" aria-label="Selected hotspot">
+    <h2>Hotspot</h2>
+    <div class="body" id="inspector"></div>
+    <div class="export">
+      <button class="btn primary" id="exportBtn" type="button" disabled>Save images + flyer data (.zip)</button>
+      <button class="btn" id="exportJsonBtn" type="button" disabled>Save flyer data only (.json)</button>
+      <p>Upload the images to ECOM Creative › Content Pages › Digital Flyers, then import the flyer data in the Digital Flyer item.</p>
+    </div>
+  </aside>
+</div>
+
+<dialog class="guide" id="guide" aria-labelledby="guideTitle">
+  <div class="guidehead">
+    <h2 id="guideTitle">How to publish a flyer</h2>
+    <button class="btn" id="guideClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead">From the final PDF to a shoppable flyer on scheels.com. Steps 1 to 4 happen here in Flyer Studio; 5 to 7 in Amplience.</p>
+    <ol class="steps">
+      <li>
+        <h3>Start the flyer</h3>
+        <p>Get the final flyer PDF from Creative, and the item list (.xlsx or .csv) if there is one. Click <b>Open flyer PDF</b>, then <b>Item list</b>. Fill in the title, the sale dates and a <b>campaign code</b>: lowercase letters and numbers, like <code>biggame26</code>. The campaign code names the page images and tags the flyer's analytics, so keep it the same from here to Amplience.</p>
+      </li>
+      <li>
+        <h3>Generate the hotspots</h3>
+        <p>Enter the pages to generate (<code>all</code>, or ranges like <code>2-10, 26</code>) and click <b>Generate</b>. Claude takes 30 to 60 seconds a page. You can stop and continue later: your work is kept in this browser for this PDF, so reopen the same file to pick up where you left off.</p>
+      </li>
+      <li>
+        <h3>Check every page</h3>
+        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. Click a box to select it, drag to move it, drag its corner to resize it, or use <b>Draw box</b> to add one. Fix the product name and price on the right. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
+      </li>
+      <li>
+        <h3>Save the files</h3>
+        <p>Click <b>Save images + flyer data (.zip)</b> and unzip it. It holds one image per page (<code>flyer-biggame26-p01.jpg</code> and so on) and the flyer data (<code>flyer-biggame26.json</code>). Don't rename the images: Amplience finds each page's image by its name.</p>
+      </li>
+      <li>
+        <h3>Upload the images to Amplience</h3>
+        <p>In Content Hub, open <b>ECOM Creative › Content Pages › Digital Flyers</b>, upload all the page images and <b>publish</b> them. Unpublished pages stay hidden on the site.</p>
+      </li>
+      <li>
+        <h3>Import into the Digital Flyer item</h3>
+        <p>Create (or open) a <b>Digital Flyer</b> content item. In its Pages field, choose the <code>.json</code> file. The importer then:</p>
+        <ul>
+          <li>shows the title, campaign code and dates to copy into the fields above it;</li>
+          <li>searches Scheels for every product and ticks the ones whose brand, model and printed price match. Click <b>Show only ones to check</b> and tick the right product for the rest; leave all unticked to use a search link;</li>
+          <li>checks that each page image is published.</li>
+        </ul>
+        <p>Click <b>Import pages into this item</b>, then <b>Save</b> the item.</p>
+      </li>
+      <li>
+        <h3>Preview and schedule</h3>
+        <p>Preview the item and click a few hotspots: matched products open a product panel with price and add to cart. Then publish it, scheduled for the sale dates.</p>
+      </li>
+    </ol>
+    <h3 class="sub">Fixing a live flyer</h3>
+    <p>Open the Digital Flyer item: the Pages field shows the saved flyer. Move or resize boxes, change a hotspot's products with <b>Find product</b>, or draw and delete boxes, then save the item. For a new proof from Creative, repeat steps 1 to 5 here and use <b>Replace with a new Flyer Studio export</b> in the item.</p>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(() => {
+const EXAMPLE_IMG = "__EXAMPLE_IMG__";
+const EXAMPLE_HOTSPOTS = __EXAMPLE_HOTSPOTS__;
+const EXPORT_WIDTH = 1600;   // px width of exported page images
+const CLAUDE_WIDTH = 1100;   // px width of the image Claude looks at
+const PREVIEW_WIDTH = 1100;  // px width of the on-screen page
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round1 = (v) => Math.round(v * 10) / 10;
+
+const state = {
+  example: true, file: null, pdf: null,
+  pages: [],          // {hotspots, status, error, items, url}
+  current: 0, selected: -1, drawing: false,
+  sheetRows: [], abort: null, busy: false,
+};
+let sample = null, downloads = null;
+let claudeState = 'checking'; // checking | ready | text-only | no-runtime | unavailable
+
+// ---------- persistence (per viewer convenience; work survives a reload of the same PDF) ----------
+const storeKey = () => state.file ? `flyer-studio:${state.file.name}:${state.file.size}` : null;
+function persist() {
+  const key = storeKey(); if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status })) }));
+    localStorage.setItem('flyer-studio:details', JSON.stringify(readDetails()));
+  } catch {}
+}
+function restore() {
+  try { const raw = localStorage.getItem(storeKey()); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+
+// ---------- details ----------
+function readDetails() {
+  return { title: $('fTitle').value.trim(), campaign: $('fCampaign').value.trim().toLowerCase(), startDate: $('fStart').value, endDate: $('fEnd').value };
+}
+function writeDetails(d) {
+  if (!d) return;
+  $('fTitle').value = d.title || ''; $('fCampaign').value = d.campaign || ''; $('fStart').value = d.startDate || ''; $('fEnd').value = d.endDate || '';
+}
+['fTitle', 'fCampaign', 'fStart', 'fEnd'].forEach((id) => $(id).addEventListener('change', () => { persist(); updateExport(); }));
+
+// ---------- status ----------
+function setStatus(text, isError = false) { const s = $('status'); s.textContent = text; s.classList.toggle('err', isError); }
+const SAMPLE_ERRORS = {
+  not_granted: 'Claude is not allowed for this page. Allow it from the artifact’s permissions to generate hotspots.',
+  sampling_disabled: 'Claude is not available for your account here.',
+  rate_limited: 'Claude is busy or you have hit a usage limit. Wait a minute, then generate the remaining pages.',
+  session_expired: 'Your Claude session expired. Sign in again, then retry.',
+  image_rejected: 'Claude could not read this page image.',
+  refused: 'Claude declined this page. Draw its boxes by hand.',
+  invalid_json: 'Claude’s answer could not be read. Generate this page again.',
+  prompt_too_large: 'This page plus the item list is too large to send. Try without the item list.',
+  upstream_error: 'Claude could not be reached. Generate this page again.',
+};
+const sampleError = (e) => SAMPLE_ERRORS[e?.code] || SAMPLE_ERRORS.upstream_error;
+const STOP_BATCH = new Set(['not_granted', 'sampling_disabled', 'rate_limited', 'session_expired', 'not_declared', 'capability_disabled', 'capability_removed', 'images_unavailable']);
+
+// ---------- spreadsheet ----------
+$('sheetInput').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    const header = (rows.shift() || []).map((h, i) => String(h).trim() || `col${i + 1}`);
+    state.sheetRows = rows.map((r, i) => {
+      const fields = r.map((v, j) => String(v).trim() ? `${header[j]}=${String(v).trim()}` : '').filter(Boolean);
+      return fields.length ? { id: `r${i + 2}`, text: fields.join('; ') } : null;
+    }).filter(Boolean);
+    $('sheetName').textContent = `${file.name} · ${state.sheetRows.length} rows`;
+    setStatus(`Loaded ${state.sheetRows.length} rows from the item list.`);
+  } catch (e) {
+    state.sheetRows = []; $('sheetName').textContent = 'None';
+    setStatus('That item list could not be read. Save it as .xlsx or .csv with a header row.', true);
+  }
+});
+
+// Rows whose words appear on the page, so a long item list stays within what one request can carry.
+function rowsForPage(items) {
+  if (!state.sheetRows.length) return [];
+  const pageText = items.map((t) => t.text).join(' ').toLowerCase();
+  const all = state.sheetRows;
+  if (all.reduce((n, r) => n + r.text.length, 0) < 60000) return all;
+  return all.filter((r) => r.text.toLowerCase().split(/[^a-z0-9]+/).some((w) => w.length >= 4 && pageText.includes(w))).slice(0, 400);
+}
+
+// ---------- PDF ----------
+$('pdfInput').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  setStatus(`Opening ${file.name}…`);
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    state.pages.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+    Object.assign(state, { example: false, file, pdf, current: 0, selected: -1 });
+    state.pages = Array.from({ length: pdf.numPages }, () => ({ hotspots: [], status: 'empty', error: '', items: null, url: '' }));
+    const saved = restore();
+    if (saved?.pages?.length === pdf.numPages) {
+      saved.pages.forEach((p, i) => Object.assign(state.pages[i], { hotspots: p.hotspots || [], status: p.status || 'empty' }));
+      writeDetails(saved.details);
+    } else if (!$('fTitle').value) {
+      try { writeDetails(JSON.parse(localStorage.getItem('flyer-studio:details') || 'null')); } catch {}
+    }
+    $('pdfName').textContent = `${file.name} · ${pdf.numPages} pages`;
+    $('exampleBanner').hidden = true;
+    setStatus(saved ? `Opened ${file.name}. Your earlier work on it was restored.` : `Opened ${file.name}: ${pdf.numPages} pages.`);
+    await showPage(0);
+  } catch (e) {
+    setStatus(`That PDF could not be opened (${e?.message || e}). Check it is the flyer PDF itself.`, true);
+  }
+});
+
+async function pageCanvas(i, width) {
+  const page = await state.pdf.getPage(i + 1);
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: width / base.width });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+const toJpeg = (canvas, q) => new Promise((res) => canvas.toBlob(res, 'image/jpeg', q));
+
+async function textItems(i) {
+  const p = state.pages[i];
+  if (p.items) return p.items;
+  const page = await state.pdf.getPage(i + 1);
+  const vp = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+  const pct = (v, of) => round1((v / of) * 100);
+  p.items = [];
+  for (const item of content.items) {
+    if (!item.str || !item.str.trim()) continue;
+    const [x, baseline] = vp.convertToViewportPoint(item.transform[4], item.transform[5]);
+    const h = item.height || Math.hypot(item.transform[2], item.transform[3]);
+    p.items.push({ id: p.items.length + 1, text: item.str.trim(), x: pct(x, vp.width), y: pct(baseline - h, vp.height), w: pct(item.width, vp.width), h: pct(h, vp.height) });
+  }
+  return p.items;
+}
+
+// Where photos sit on the page, read from the PDF's drawing commands: each image is the unit
+// square under the current transform. Lets Claude size boxes even when it cannot see the page.
+async function imageRegions(i) {
+  const p = state.pages[i];
+  if (p.regions) return p.regions;
+  const page = await state.pdf.getPage(i + 1);
+  const vp = page.getViewport({ scale: 1 });
+  const { fnArray, argsArray } = await page.getOperatorList();
+  const O = pdfjsLib.OPS;
+  const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+  const paints = new Set([O.paintImageXObject, O.paintInlineImageXObject, O.paintImageMaskXObject, O.paintJpegXObject, O.paintImageXObjectRepeat].filter((v) => v !== undefined));
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  const found = [];
+  fnArray.forEach((fn, k) => {
+    const args = argsArray[k];
+    if (fn === O.save) stack.push(ctm);
+    else if (fn === O.restore) ctm = stack.pop() || ctm;
+    else if (fn === O.transform) ctm = mul(ctm, args);
+    else if (fn === O.paintFormXObjectBegin || fn === O.beginGroup) {
+      stack.push(ctm);
+      const m = fn === O.beginGroup ? args?.[0]?.matrix : args?.[0];
+      if ((Array.isArray(m) || ArrayBuffer.isView(m)) && m.length === 6) ctm = mul(ctm, Array.from(m));
+    } else if (fn === O.paintFormXObjectEnd || fn === O.endGroup) ctm = stack.pop() || ctm;
+    else if (paints.has(fn)) {
+      const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => vp.convertToViewportPoint(ctm[0] * u + ctm[2] * v + ctm[4], ctm[1] * u + ctm[3] * v + ctm[5]));
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      const x = clamp((Math.min(...xs) / vp.width) * 100, 0, 100), y = clamp((Math.min(...ys) / vp.height) * 100, 0, 100);
+      const w = clamp((Math.max(...xs) / vp.width) * 100, 0, 100) - x, h = clamp((Math.max(...ys) / vp.height) * 100, 0, 100) - y;
+      if (w >= 3 && h >= 3 && w * h < 8500) found.push({ x: round1(x), y: round1(y), w: round1(w), h: round1(h) });
+    }
+  });
+  p.regions = found.sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 60).map((r, n) => ({ id: n + 1, ...r }));
+  return p.regions;
+}
+
+async function ensurePreview(i) {
+  const p = state.pages[i];
+  if (!p.url) p.url = URL.createObjectURL(await toJpeg(await pageCanvas(i, PREVIEW_WIDTH), 0.85));
+  await textItems(i);
+}
+
+// ---------- generation ----------
+const PROMPT_RULES = `You turn one page of a printed SCHEELS sale flyer into shoppable hotspots.
+A hotspot is the area a shopper taps for one advertised product or offer: its photo, name and price together. Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Editorial pages (articles, partner logos) have no hotspots.
+Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
+Only use item-list rows when the printed brand and product clearly correspond; copy SKUs exactly from those rows and never invent one.
+confidence is "high" only when the box is unambiguous (and, if an item list was given, the match is certain); otherwise "low" with a short note saying what to check.`;
+
+function buildPrompt(i, items, regions, rows, locked, withImage) {
+  const lines = [PROMPT_RULES, '', withImage
+    ? `This is page ${i + 1} of ${state.pages.length}. The image is the page.`
+    : `This is page ${i + 1} of ${state.pages.length}. You cannot see this page: work from its text items and photo regions below. A hotspot's box should cover its product's photo region(s) together with its name and price text.`];
+  lines.push(items.length
+    ? `Text items on this page (id | x | y | w | h | text), in % of the page:\n${items.map((t) => `${t.id} | ${t.x} | ${t.y} | ${t.w} | ${t.h} | ${t.text}`).join('\n')}`
+    : 'This page has no text layer. Place boxes from the image alone and mark every hotspot low confidence.');
+  if (regions.length) lines.push(`Photo regions on this page (id | x | y | w | h), in % of the page, largest first. Full-page backgrounds are left out:\n${regions.map((r) => `${r.id} | ${r.x} | ${r.y} | ${r.w} | ${r.h}`).join('\n')}`);
+  if (rows.length) lines.push(`Item-list rows that may appear on this page:\n${rows.map((r) => `${r.id}: ${r.text}`).join('\n')}`);
+  if (locked.length) lines.push(`A person already placed these hotspots; do not output hotspots for these products or areas:\n${locked.map((h) => `- ${h.label} at x ${h.box.x}, y ${h.box.y}, w ${h.box.w}, h ${h.box.h}`).join('\n')}`);
+  lines.push(`Reply with only JSON of this shape:
+{"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"textItemIds":[38,39],"skus":[],"confidence":"high","note":""}]}
+Use {"hotspots":[]} when the page has no products.`);
+  return lines.join('\n\n');
+}
+
+function cleanHotspot(h) {
+  const box = h?.box || {};
+  const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
+  const label = String(h?.label || '').trim();
+  const brand = String(h?.brand || '').trim();
+  return {
+    label, priceText: String(h?.priceText || '').trim(), brand,
+    box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
+    textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
+    skus: Array.isArray(h?.skus) ? h.skus.map((s) => String(s).trim()).filter(Boolean) : [],
+    fallback: { type: 'search', value: [brand, label.replace(new RegExp(`^${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '')].filter(Boolean).join(' ') || label },
+    confidence: h?.confidence === 'high' ? 'high' : 'low', note: String(h?.note || '').trim(), locked: false,
+  };
+}
+
+async function generatePage(i, signal) {
+  const p = state.pages[i];
+  p.status = 'working'; p.error = ''; renderRail(); if (i === state.current) renderStage();
+  try {
+    const items = await textItems(i);
+    const regions = await imageRegions(i).catch(() => []);
+    const withImage = claudeState === 'ready';
+    const options = { signal, modelTier: 'complex' };
+    if (withImage) options.images = [await toJpeg(await pageCanvas(i, CLAUDE_WIDTH), 0.82)];
+    const locked = p.hotspots.filter((h) => h.locked);
+    const result = await sample.json(buildPrompt(i, items, regions, rowsForPage(items), locked, withImage), options);
+    const fresh = (Array.isArray(result?.hotspots) ? result.hotspots : []).map(cleanHotspot).filter((h) => h.label);
+    p.hotspots = [...locked, ...fresh];
+    p.status = 'done';
+    if (i === state.current) state.selected = -1;
+    return null;
+  } catch (e) {
+    p.status = e?.code === 'cancelled' ? (p.hotspots.length ? 'done' : 'empty') : 'error';
+    p.error = e?.code === 'cancelled' ? '' : sampleError(e);
+    return e;
+  } finally {
+    persist(); renderRail(); if (i === state.current) renderStage(); updateExport();
+  }
+}
+
+function parseRange(text, n) {
+  const t = text.trim().toLowerCase();
+  if (!t || t === 'all') return Array.from({ length: n }, (_, i) => i);
+  const out = new Set();
+  for (const part of t.split(/[,\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\d+)(?:-(\d+))?$/); if (!m) return null;
+    const a = Number(m[1]), b = Number(m[2] || m[1]);
+    for (let k = Math.min(a, b); k <= Math.max(a, b); k++) if (k >= 1 && k <= n) out.add(k - 1);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+async function runBatch(indices) {
+  if (!sample || state.busy) return;
+  state.busy = true; state.abort = new AbortController();
+  $('stopBtn').hidden = false; updateButtons();
+  let done = 0, failed = 0;
+  for (const i of indices) {
+    if (state.abort.signal.aborted) break;
+    setStatus(`Generating page ${i + 1} (${done + failed + 1} of ${indices.length})… Claude takes about half a minute per page.`);
+    let err = await generatePage(i, state.abort.signal);
+    if (err?.code === 'images_unavailable') { claudeState = 'text-only'; updateButtons(); err = await generatePage(i, state.abort.signal); }
+    if (!err) { done++; continue; }
+    if (err.code === 'cancelled') break;
+    failed++;
+    if (STOP_BATCH.has(err.code)) { setStatus(sampleError(err), true); break; }
+  }
+  const stopped = state.abort.signal.aborted;
+  state.busy = false; state.abort = null; $('stopBtn').hidden = true; updateButtons();
+  if (!$('status').classList.contains('err')) setStatus(`${stopped ? 'Stopped. ' : ''}Generated ${done} page${done === 1 ? '' : 's'}${failed ? `; ${failed} failed (marked in the list)` : ''}.`);
+}
+
+$('genBtn').addEventListener('click', () => {
+  const pages = parseRange($('range').value, state.pages.length);
+  if (!pages) { setStatus('Pages to generate: use "all", or numbers and ranges like 2-10, 26.', true); return; }
+  if (!pages.length) { setStatus('No pages in that range.', true); return; }
+  runBatch(pages);
+});
+$('genPageBtn').addEventListener('click', () => runBatch([state.current]));
+$('stopBtn').addEventListener('click', () => state.abort?.abort());
+
+// ---------- checks ----------
+function problemsFor(h, items) {
+  const out = [];
+  const owned = (items || []).filter((t) => h.textItemIds.includes(t.id));
+  if (owned.length) {
+    const l = Math.min(...owned.map((t) => t.x)), t0 = Math.min(...owned.map((t) => t.y));
+    const r = Math.max(...owned.map((t) => t.x + t.w)), b = Math.max(...owned.map((t) => t.y + t.h));
+    const s = 1;
+    if (l < h.box.x - s || t0 < h.box.y - s || r > h.box.x + h.box.w + s || b > h.box.y + h.box.h + s) out.push('The box does not cover all of its printed text.');
+  }
+  if (!h.label) out.push('Give the product a name.');
+  if (!h.fallback?.value) out.push('Add a fallback link value.');
+  if (state.sheetRows.length && !h.skus.length) out.push('No item-list match. Add a SKU or rely on the fallback link.');
+  return out;
+}
+
+// ---------- rendering ----------
+function pageSummary(p) {
+  if (p.status === 'working') return ['work', 'Generating'];
+  if (p.status === 'error') return ['bad', 'Failed'];
+  if (p.status === 'empty') return ['', 'Not generated'];
+  const low = p.hotspots.filter((h) => h.confidence === 'low' || problemsFor(h, p.items).length).length;
+  if (!p.hotspots.length) return ['', 'No products'];
+  return low ? ['warn', `${p.hotspots.length} · ${low} to check`] : ['ok', `${p.hotspots.length} hotspot${p.hotspots.length === 1 ? '' : 's'}`];
+}
+
+function renderRail() {
+  const list = $('pageList'); list.replaceChildren();
+  if (state.example) {
+    list.append(el('li', {}, el('button', { type: 'button', ariaCurrent: 'true' }, el('span', { className: 'pn', textContent: '26' }), el('span', { textContent: 'Example page' }), el('span', { className: 'st' }, el('span', { className: 'chip warn', textContent: '8 · 2 to check' })))));
+    $('summary').textContent = '';
+    return;
+  }
+  state.pages.forEach((p, i) => {
+    const [kind, text] = pageSummary(p);
+    const b = el('button', { type: 'button' }, el('span', { className: 'pn', textContent: String(i + 1) }), el('span', { textContent: i === 0 ? 'Cover' : `Page ${i + 1}` }), el('span', { className: 'st' }, el('span', { className: `chip ${kind}`, textContent: text })));
+    b.setAttribute('aria-current', String(i === state.current));
+    b.addEventListener('click', () => showPage(i));
+    list.append(el('li', {}, b));
+  });
+  const doneCount = state.pages.filter((p) => p.status === 'done').length;
+  const total = state.pages.reduce((n, p) => n + p.hotspots.length, 0);
+  const check = state.pages.reduce((n, p) => n + p.hotspots.filter((h) => h.confidence === 'low' || problemsFor(h, p.items).length).length, 0);
+  $('summary').textContent = `${doneCount} of ${state.pages.length} pages done · ${total} hotspots · ${check} to check`;
+}
+
+function currentPage() { return state.example ? { hotspots: EXAMPLE_HOTSPOTS, items: null, url: EXAMPLE_IMG, status: 'done' } : state.pages[state.current]; }
+
+function renderStage() {
+  const p = currentPage();
+  const sheet = $('sheet'); sheet.replaceChildren(); sheet.classList.toggle('drawing', state.drawing);
+  $('pageTitle').textContent = state.example ? 'Page 26' : state.current === 0 ? 'Cover' : `Page ${state.current + 1}`;
+  if (!p?.url) { sheet.append(el('div', { className: 'empty', textContent: 'Loading page…' })); return; }
+  sheet.append(el('img', { src: p.url, alt: `Flyer ${state.example ? 'page 26' : `page ${state.current + 1}`}` }));
+  if (p.status === 'error' && p.error) setStatus(`Page ${state.current + 1}: ${p.error}`, true);
+  p.hotspots.forEach((h, idx) => {
+    const problems = problemsFor(h, p.items);
+    const box = el('div', { className: `hs${h.confidence === 'low' ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
+    box.setAttribute('role', 'button');
+    box.setAttribute('aria-pressed', String(idx === state.selected));
+    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : h.confidence === 'low' ? ', check this one' : ''}`);
+    Object.assign(box.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
+    box.append(el('span', { className: 'n', textContent: String(idx + 1) }), el('span', { className: 'grip', ariaHidden: 'true' }));
+    box.dataset.idx = String(idx);
+    sheet.append(box);
+  });
+  renderInspector();
+}
+
+function field(labelText, input) { return el('label', { className: 'f' }, labelText, input); }
+
+function renderInspector() {
+  const body = $('inspector'); body.replaceChildren();
+  const p = currentPage();
+  const h = p?.hotspots[state.selected];
+  if (!h) {
+    body.append(el('p', { className: 'hint', textContent: p?.hotspots.length ? 'Select a box to check or fix it. Drag to move, drag the corner to resize, or use the arrow keys (Shift + arrows resizes).' : 'Generate this page, or use Draw box to add hotspots by hand.' }));
+    return;
+  }
+  const edit = (fn) => { fn(h); h.locked = true; persist(); renderStage(); renderRail(); };
+  const label = el('input', { type: 'text', value: h.label, id: 'iLabel' });
+  label.addEventListener('change', () => edit((x) => { x.label = label.value.trim(); }));
+  const price = el('input', { type: 'text', value: h.priceText, id: 'iPrice' });
+  price.addEventListener('change', () => edit((x) => { x.priceText = price.value.trim(); }));
+  const skus = el('input', { type: 'text', value: h.skus.join(', '), id: 'iSkus', className: 'mono' });
+  skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); }));
+  const ftype = el('select', { id: 'iFtype' }, ...['search', 'brand', 'category'].map((t) => el('option', { value: t, textContent: t[0].toUpperCase() + t.slice(1), selected: h.fallback.type === t })));
+  ftype.addEventListener('change', () => edit((x) => { x.fallback.type = ftype.value; }));
+  const fval = el('input', { type: 'text', value: h.fallback.value, id: 'iFval' });
+  fval.addEventListener('change', () => edit((x) => { x.fallback.value = fval.value.trim(); }));
+  const conf = el('select', { id: 'iConf' }, el('option', { value: 'high', textContent: 'High', selected: h.confidence === 'high' }), el('option', { value: 'low', textContent: 'Check', selected: h.confidence === 'low' }));
+  conf.addEventListener('change', () => edit((x) => { x.confidence = conf.value; }));
+
+  body.append(el('div', { className: 'pagetitle', textContent: `#${state.selected + 1}${h.locked ? ' · edited' : ''}` }));
+  const problems = problemsFor(h, p.items);
+  if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
+  if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
+  body.append(
+    field('Product', label), field('Price as printed', price), field('SKUs (comma separated)', skus),
+    el('div', { className: 'two' }, field('Fallback link', ftype), field('Confidence', conf)),
+    field(h.fallback.type === 'brand' ? 'Brand' : h.fallback.type === 'category' ? 'Category' : 'Search for', fval),
+    el('div', { className: 'mono', textContent: `x ${h.box.x}  y ${h.box.y}  w ${h.box.w}  h ${h.box.h}` }),
+  );
+  const del = el('button', { className: 'btn', type: 'button', textContent: 'Delete this hotspot' });
+  del.addEventListener('click', () => { p.hotspots.splice(state.selected, 1); state.selected = -1; persist(); renderStage(); renderRail(); });
+  body.append(del);
+}
+
+async function showPage(i) {
+  if (state.example) return;
+  state.current = clamp(i, 0, state.pages.length - 1); state.selected = -1;
+  renderRail(); renderStage(); updateButtons();
+  const target = state.current;
+  try { await ensurePreview(target); } catch { setStatus(`Page ${target + 1} could not be drawn.`, true); }
+  if (target === state.current) { renderStage(); renderRail(); }
+}
+$('prevBtn').addEventListener('click', () => showPage(state.current - 1));
+$('nextBtn').addEventListener('click', () => showPage(state.current + 1));
+
+function updateButtons() {
+  const ready = !state.example && !!sample;
+  const hints = {
+    checking: 'Connecting to Claude\u2026',
+    'no-runtime': 'Generate needs the page opened on claude.ai.',
+    unavailable: 'Claude is not available in this view, so Generate is off.',
+    'text-only': 'Claude can\u2019t see page images in this view, so it works from the PDF\u2019s text and photo positions. Check boxes closely.',
+  };
+  $('genHint').textContent = state.busy ? '' : state.example ? 'Open a flyer PDF to turn on Generate.' : hints[claudeState] || '';
+  $('genBtn').disabled = !ready || state.busy;
+  $('genPageBtn').disabled = !ready || state.busy;
+  $('prevBtn').disabled = state.example || state.current === 0;
+  $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
+  $('drawBtn').setAttribute('aria-pressed', String(state.drawing));
+  updateExport();
+}
+
+// ---------- editing: select, move, resize, draw ----------
+const sheetEl = $('sheet');
+let drag = null;
+const pctPoint = (ev) => { const r = sheetEl.getBoundingClientRect(); return { x: ((ev.clientX - r.left) / r.width) * 100, y: ((ev.clientY - r.top) / r.height) * 100 }; };
+
+sheetEl.addEventListener('pointerdown', (ev) => {
+  const p = currentPage(); if (!p?.url) return;
+  const boxEl = ev.target.closest('.hs');
+  const pt = pctPoint(ev);
+  if (state.drawing && !boxEl) {
+    drag = { mode: 'draw', start: pt, draft: el('div', { className: 'draft' }) };
+    sheetEl.append(drag.draft);
+  } else if (boxEl) {
+    const idx = Number(boxEl.dataset.idx);
+    state.selected = idx;
+    const h = p.hotspots[idx];
+    drag = { mode: ev.target.classList.contains('grip') ? 'resize' : 'move', idx, start: pt, orig: { ...h.box }, moved: false };
+  } else { state.selected = -1; renderStage(); return; }
+  sheetEl.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+sheetEl.addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  const pt = pctPoint(ev);
+  const dx = pt.x - drag.start.x, dy = pt.y - drag.start.y;
+  if (drag.mode === 'draw') {
+    const x = Math.min(pt.x, drag.start.x), y = Math.min(pt.y, drag.start.y);
+    Object.assign(drag.draft.style, { left: `${x}%`, top: `${y}%`, width: `${Math.abs(dx)}%`, height: `${Math.abs(dy)}%` });
+    return;
+  }
+  if (Math.abs(dx) + Math.abs(dy) > 0.3) drag.moved = true;
+  const h = currentPage().hotspots[drag.idx], o = drag.orig;
+  if (drag.mode === 'move') { h.box.x = round1(clamp(o.x + dx, 0, 100 - o.w)); h.box.y = round1(clamp(o.y + dy, 0, 100 - o.h)); }
+  else { h.box.w = round1(clamp(o.w + dx, 1, 100 - o.x)); h.box.h = round1(clamp(o.h + dy, 1, 100 - o.y)); }
+  const boxEl = sheetEl.querySelector(`.hs[data-idx="${drag.idx}"]`);
+  if (boxEl) Object.assign(boxEl.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
+});
+sheetEl.addEventListener('pointerup', (ev) => {
+  if (!drag) return;
+  const p = currentPage();
+  if (drag.mode === 'draw') {
+    const pt = pctPoint(ev);
+    const x = clamp(Math.min(pt.x, drag.start.x), 0, 100), y = clamp(Math.min(pt.y, drag.start.y), 0, 100);
+    const w = Math.abs(pt.x - drag.start.x), h = Math.abs(pt.y - drag.start.y);
+    if (w > 2 && h > 2) {
+      p.hotspots.push({ label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: { type: 'search', value: '' }, confidence: 'high', note: '', locked: true });
+      state.selected = p.hotspots.length - 1;
+      state.drawing = false; updateButtons();
+      if (!state.example) p.status = 'done';
+    }
+  } else if (drag.moved) { p.hotspots[drag.idx].locked = true; }
+  drag = null;
+  persist(); renderStage(); renderRail();
+  if (state.selected >= 0) $('iLabel')?.focus({ preventScroll: true });
+});
+sheetEl.addEventListener('keydown', (ev) => {
+  const boxEl = ev.target.closest('.hs'); if (!boxEl) return;
+  const idx = Number(boxEl.dataset.idx), h = currentPage().hotspots[idx];
+  if (ev.key === 'Enter' || ev.key === ' ') { state.selected = idx; renderStage(); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
+  const step = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[ev.key];
+  if (!step) return;
+  ev.preventDefault();
+  if (ev.shiftKey) { h.box.w = round1(clamp(h.box.w + step[0], 1, 100 - h.box.x)); h.box.h = round1(clamp(h.box.h + step[1], 1, 100 - h.box.y)); }
+  else { h.box.x = round1(clamp(h.box.x + step[0], 0, 100 - h.box.w)); h.box.y = round1(clamp(h.box.y + step[1], 0, 100 - h.box.h)); }
+  h.locked = true; state.selected = idx; persist(); renderStage();
+  sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus();
+});
+$('drawBtn').addEventListener('click', () => { state.drawing = !state.drawing; updateButtons(); renderStage(); });
+
+// ---------- export ----------
+function updateExport() {
+  const d = readDetails();
+  const ok = !state.example && !!downloads && state.pages.some((p) => p.status === 'done') && /^[a-z0-9_-]+$/.test(d.campaign);
+  $('exportBtn').disabled = !ok || state.busy;
+  $('exportJsonBtn').disabled = !ok || state.busy;
+  $('exportBtn').title = ok ? '' : 'Open a PDF, generate at least one page and fill in the campaign code first.';
+}
+// Sale dates are set in Central time; its UTC offset depends on daylight saving.
+function centralOffset(day) {
+  try {
+    const name = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' })
+      .formatToParts(new Date(`${day}T12:00:00Z`)).find((x) => x.type === 'timeZoneName')?.value || '';
+    const m = name.match(/GMT([+-])(\d+)/);
+    return m ? `${m[1]}${m[2].padStart(2, '0')}:00` : '-06:00';
+  } catch { return '-06:00'; }
+}
+const imageName = (campaign, i) => `flyer-${campaign}-p${String(i + 1).padStart(2, '0')}`;
+function flyerData() {
+  const d = readDetails();
+  return {
+    title: d.title, campaign: d.campaign,
+    startDate: d.startDate ? `${d.startDate}T00:00:00${centralOffset(d.startDate)}` : '', endDate: d.endDate ? `${d.endDate}T23:59:59${centralOffset(d.endDate)}` : '',
+    pdfFile: state.file?.name || '',
+    pages: state.pages.map((p, i) => ({
+      imageName: imageName(d.campaign, i),
+      hotspots: p.hotspots.map((h) => ({ label: h.label, priceText: h.priceText, box: h.box, skus: h.skus, fallback: h.fallback, locked: h.locked, confidence: h.confidence })),
+    })),
+  };
+}
+async function save(filename, data) {
+  try { await downloads.save({ filename, data }); setStatus(`Saved ${filename}.`); }
+  catch (e) { setStatus(e?.code === 'declined' ? 'Save cancelled.' : `Could not save ${filename}.`, e?.code !== 'declined'); }
+}
+$('exportJsonBtn').addEventListener('click', () => save(`flyer-${readDetails().campaign}.json`, JSON.stringify(flyerData(), null, 2)));
+$('exportBtn').addEventListener('click', async () => {
+  const d = readDetails();
+  state.busy = true; updateButtons();
+  try {
+    const zip = new JSZip();
+    for (let i = 0; i < state.pages.length; i++) {
+      setStatus(`Preparing page image ${i + 1} of ${state.pages.length}…`);
+      zip.file(`${imageName(d.campaign, i)}.jpg`, await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86));
+    }
+    zip.file(`flyer-${d.campaign}.json`, JSON.stringify(flyerData(), null, 2));
+    setStatus('Compressing…');
+    await save(`flyer-${d.campaign}.zip`, await zip.generateAsync({ type: 'blob' }));
+  } catch { setStatus('The images could not be prepared.', true); }
+  finally { state.busy = false; updateButtons(); }
+});
+
+// ---------- guide ----------
+const guide = $('guide');
+const openGuide = () => { try { guide.showModal(); } catch { guide.setAttribute('open', ''); } $('guideClose').focus(); };
+$('guideBtn').addEventListener('click', openGuide);
+$('guideBtn2').addEventListener('click', openGuide);
+$('guideClose').addEventListener('click', () => guide.close());
+guide.addEventListener('click', (ev) => { if (ev.target === guide) guide.close(); });
+
+// ---------- start ----------
+renderRail(); renderStage(); updateButtons();
+setStatus('Open a flyer PDF to begin. Pages without products are fine: Claude returns none for them.');
+(async () => {
+  if (!window.claude?.use) { claudeState = 'no-runtime'; updateButtons(); return; }
+  [sample, downloads] = await Promise.all([claude.use('sample'), claude.use('downloads')]);
+  if (sample) {
+    const limits = await sample.limits().catch(() => null);
+    claudeState = limits?.images ? 'ready' : 'text-only';
+  } else claudeState = 'unavailable';
+  updateButtons();
+})();
+})();
+</script>

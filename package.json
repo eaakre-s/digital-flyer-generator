@@ -1,0 +1,22 @@
+{
+  "name": "digital-flyer-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "extension:dev": "vite",
+    "extension:build": "vite build",
+    "studio:build": "python3 studio/build.py",
+    "ts": "tsc --noEmit -p extension"
+  },
+  "dependencies": {
+    "dc-extensions-sdk": "^2.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3"
+  }
+}

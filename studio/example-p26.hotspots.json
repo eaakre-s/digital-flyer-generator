@@ -1,0 +1,92 @@
+{
+  "hotspots": [
+    {
+      "label": "Pulsar Merger XL50 Thermal Binoculars",
+      "priceText": "Now $4,999.99 · Reg. $7,999.99 · Save $3,000",
+      "brand": "Pulsar",
+      "box": { "x": 1, "y": 1, "w": 37.5, "h": 95 },
+      "textItemIds": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 107, 108, 109, 110],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    },
+    {
+      "label": "Pulsar Thermion 2 LRF XP50 Pro Thermal Riflescope",
+      "priceText": "Now $3,999.99 · Reg. $5,499.99 · Save $1,500",
+      "brand": "Pulsar",
+      "box": { "x": 40, "y": 1, "w": 29.5, "h": 19 },
+      "textItemIds": [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    },
+    {
+      "label": "Pulsar Talion XG35 Scope",
+      "priceText": "Now $2,199.97 · Reg. $3,499.97 · Save $1,300",
+      "brand": "Pulsar",
+      "box": { "x": 70, "y": 1, "w": 29, "h": 19 },
+      "textItemIds": [38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    },
+    {
+      "label": "Pulsar Merger XP35 Binoculars",
+      "priceText": "Now $2,999.99 · Reg. $3,499.99 · Save $500",
+      "brand": "Pulsar",
+      "box": { "x": 40, "y": 20.5, "w": 29.5, "h": 15.5 },
+      "textItemIds": [13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    },
+    {
+      "label": "Pulsar Thermion 2 LRF XQ50 Pro Thermal Riflescope",
+      "priceText": "Now $2,999.97 · Reg. $3,499.97 · Save $500",
+      "brand": "Pulsar",
+      "box": { "x": 70, "y": 20.5, "w": 29, "h": 15.5 },
+      "textItemIds": [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    },
+    {
+      "label": "Pulsar Trail 3 LRF XR50 Thermal Riflescope",
+      "priceText": "$4,199.97",
+      "brand": "Pulsar",
+      "box": { "x": 40, "y": 37.5, "w": 30, "h": 42 },
+      "textItemIds": [1, 2, 3, 4, 5, 6, 75, 78, 81, 84],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "low",
+      "note": "One photo shows the Trail 3; the XR50 and XQ50 share it, so the section is split down the middle by price column."
+    },
+    {
+      "label": "Pulsar Trail 3 LRF XQ50 Thermal Riflescope",
+      "priceText": "$2,999.97",
+      "brand": "Pulsar",
+      "box": { "x": 70, "y": 37.5, "w": 29, "h": 42 },
+      "textItemIds": [7, 8, 9, 10, 11, 12, 76, 79, 82, 85],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "low",
+      "note": "Shares the Trail 3 photo with the XR50; split by price column."
+    },
+    {
+      "label": "Pulsar Axion XQ19 Compact Thermal Monocular",
+      "priceText": "$999.97",
+      "brand": "Pulsar",
+      "box": { "x": 39.5, "y": 82, "w": 60, "h": 17 },
+      "textItemIds": [96, 97, 98, 99, 100, 101, 111, 112, 113, 114],
+      "rowIds": [],
+      "skus": [],
+      "confidence": "high",
+      "note": ""
+    }
+  ]
+}

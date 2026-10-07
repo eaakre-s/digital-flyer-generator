@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flyer import</title>
+    <style>
+      :root {
+        --ink: #1f2a33;
+        --ink-2: #5f6b75;
+        --line: #d9dee3;
+        --bg: #ffffff;
+        --panel: #f5f7f9;
+        --accent: #039be5;
+        --ok: #1f7a4d;
+        --warn: #a85a00;
+        --bad: #c62828;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 4px 2px 12px; font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+      section { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+      section:first-of-type { border-top: 0; padding-top: 0; }
+      h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+      p { margin: 0; }
+      .muted { color: var(--ink-2); }
+      button, .file { font: inherit; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); padding: 6px 12px; cursor: pointer; color: var(--ink); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      a { color: var(--accent); }
+      button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
+      :focus-visible, .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      #message { min-height: 20px; }
+      #message[data-kind='error'] { color: var(--bad); }
+      #message[data-kind='ok'] { color: var(--ok); }
+      ul#details { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+      ul#details li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+      ul#details .label { min-width: 110px; color: var(--ink-2); }
+      code { font: 13px ui-monospace, Menlo, monospace; background: var(--panel); padding: 1px 6px; border-radius: 3px; }
+      .ok { color: var(--ok); }
+      .warn { color: var(--warn); }
+      .tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+      th { position: sticky; top: 0; background: var(--panel); font-weight: 600; }
+      td:first-child, td:nth-child(3) { font-variant-numeric: tabular-nums; }
+      details > summary { cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--ink); }
+      .edlayout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+      @media (max-width: 760px) { .edlayout { grid-template-columns: 1fr; } }
+      .sheet { position: relative; border: 1px solid var(--line); background: var(--panel); touch-action: none; user-select: none; }
+      .sheet img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+      .sheet.drawing { cursor: crosshair; }
+      .sheet .empty { padding: 40px 16px; text-align: center; }
+      .hs { position: absolute; padding: 0; border: 2px solid var(--ok); background: rgba(31, 122, 77, 0.12); border-radius: 3px; cursor: move; }
+      .hs.unlinked { border-color: var(--warn); background: rgba(168, 90, 0, 0.14); }
+      .hs[aria-pressed='true'] { outline: 3px solid var(--accent); outline-offset: 1px; z-index: 2; }
+      .hs .n { position: absolute; left: 0; top: 0; background: var(--ok); color: #fff; font: 600 11px/1 sans-serif; padding: 2px 4px; }
+      .hs.unlinked .n { background: var(--warn); }
+      .hs .grip { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent); border: 2px solid #fff; display: none; cursor: nwse-resize; }
+      .hs[aria-pressed='true'] .grip { display: block; }
+      .draft { position: absolute; border: 2px dashed var(--accent); background: rgba(3, 155, 229, 0.12); pointer-events: none; }
+      .inspector { display: flex; flex-direction: column; gap: 8px; }
+      .inspector h3, .inspector h4 { margin: 4px 0 0; font-size: 14px; }
+      label.f { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-2); flex: 1; min-width: 120px; }
+      label.f input, label.f select, select, input[type='search'] { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; background: var(--bg); }
+      ul.linked, ul.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+      ul.linked li, ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+      .search .row { align-items: flex-end; }
+      button.danger { color: var(--bad); border-color: var(--bad); align-self: flex-start; }
+      #edStatus[data-kind='error'] { color: var(--bad); }
+      .plist { list-style: none; margin: 0; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+      .prow { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+      .phead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+      .chip { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; background: var(--panel); color: var(--ink-2); }
+      .chip.matched, .chip.kept { color: var(--ok); }
+      .chip.review { color: var(--warn); }
+      .chip.none { color: var(--bad); }
+      .cands { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
+      .cands label { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; cursor: pointer; }
+
+    </style>
+  </head>
+  <body>
+    <section id="editor" hidden>
+      <h2>Saved flyer</h2>
+      <div class="row">
+        <button id="edPrev" type="button" aria-label="Previous page">‹</button>
+        <label class="sr" for="edPageSelect">Page</label>
+        <select id="edPageSelect"></select>
+        <button id="edNext" type="button" aria-label="Next page">›</button>
+        <button id="edDraw" type="button" aria-pressed="false">Draw box</button>
+        <span id="edStatus" class="muted" role="status" aria-live="polite"></span>
+      </div>
+      <div class="edlayout">
+        <div class="sheet" id="edSheet"></div>
+        <div id="edInspector" class="inspector"></div>
+      </div>
+    </section>
+
+    <details id="importer" open>
+      <summary id="importerSummary">Import from Flyer Studio</summary>
+    <section>
+      <h2>Flyer pages</h2>
+      <p id="current" class="muted">Connecting to Amplience…</p>
+      <div class="row">
+        <label class="file">1. Choose flyer data (.json)<input id="fileInput" class="sr" type="file" accept=".json,application/json" /></label>
+        <span class="muted">Saved from <a id="studioLink" href="https://claude.ai/artifact/LZKiFFQj8WEiLuP8osgyRH?sk=8qeJfkjVOFJK_XBmN6347Q" target="_blank" rel="noopener noreferrer">Flyer Studio<span class="sr"> (opens in a new tab)</span></a></span>
+      </div>
+      <p id="message" role="status" aria-live="polite"></p>
+      <ul id="details"></ul>
+    </section>
+
+    <section id="stepProducts" hidden>
+      <h2>2. Products</h2>
+      <p class="muted">Each hotspot is searched in Scheels Search. Products whose brand, name and printed price agree are ticked for you; check the rest. Search shows today's prices, so items whose sale has not started yet usually need a look.</p>
+      <div class="row">
+        <span id="productSummary" class="muted" role="status" aria-live="polite"></span>
+        <button id="reviewToggle" type="button" hidden>Show all products</button>
+      </div>
+      <ul id="productList" class="plist"></ul>
+    </section>
+
+    <section id="step2" hidden>
+      <h2>3. Page images</h2>
+      <p class="muted">Upload the page images from the Flyer Studio .zip to ECOM Creative › Content Pages › Digital Flyers and publish them. Pages find their image by name.</p>
+      <div class="row">
+        <span id="imageSummary" class="muted" role="status" aria-live="polite"></span>
+        <button id="recheckBtn" type="button">Check again</button>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Page</th><th scope="col">Image name</th><th scope="col">Hotspots</th><th scope="col">Image</th></tr>
+          </thead>
+          <tbody id="pages"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="step3" hidden>
+      <h2>4. Import</h2>
+      <div class="row">
+        <button id="applyBtn" class="primary" type="button" disabled>Import pages into this item</button>
+        <span class="muted">Then save the item.</span>
+      </div>
+    </section>
+
+    </details>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
