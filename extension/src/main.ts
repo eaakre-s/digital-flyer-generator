@@ -167,8 +167,10 @@ function renderMatches() {
   }
   const counts = countByStatus(state.matches);
   summary.textContent = [
-    `${counts.matched} matched automatically`,
-    counts.kept ? `${counts.kept} kept from Flyer Studio` : '',
+    counts.kept ? `${counts.kept} confirmed from the item list` : '',
+    counts.offline ? `${counts.offline} with item-list SKUs not online yet` : '',
+    counts.instore ? `${counts.instore} in store only` : '',
+    `${counts.matched} matched by name`,
     `${counts.review} to check${counts.unresolved ? ` (${counts.unresolved} with nothing ticked)` : ''}`,
     `${counts.none} not found`,
   ]

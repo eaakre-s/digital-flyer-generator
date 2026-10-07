@@ -197,6 +197,15 @@ function renderSearch(hotspot: Hotspot) {
   return wrap;
 }
 
+function inStoreToggle(hotspot: Hotspot) {
+  const box = el('input', { type: 'checkbox', checked: !!hotspot.inStoreOnly, disabled: deps.readOnly() }) as HTMLInputElement;
+  box.addEventListener('change', () => {
+    hotspot.inStoreOnly = box.checked;
+    changed(hotspot);
+  });
+  return el('label', { className: 'check' }, box, el('span', { textContent: 'In store only (no online link)' }));
+}
+
 function renderInspector() {
   const panel = $('edInspector');
   panel.replaceChildren();
@@ -243,6 +252,7 @@ function renderInspector() {
       field('Link when no product', fallbackType),
       field('Value', text(hotspot.fallback.value, (v) => (hotspot.fallback.value = v))),
     ),
+    inStoreToggle(hotspot),
     el('h4', { textContent: 'Products' }),
   );
   if (hotspot.skus.length) {

@@ -93,6 +93,11 @@
                     "value": { "type": "string" }
                   }
                 },
+                "inStoreOnly": {
+                  "title": "In store only",
+                  "description": "Shown without an online link.",
+                  "type": "boolean"
+                },
                 "locked": { "title": "Edited by hand", "type": "boolean" },
                 "confidence": { "type": "string", "enum": ["high", "low"] }
               }

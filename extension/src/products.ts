@@ -1,20 +1,41 @@
-import { decide, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
+import { decide, findBySkus, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
 import type { StudioFlyer } from './flyer';
 
 /** One Match per hotspot, indexed [page][hotspot]. */
 export type Matches = Match[][];
 
+/**
+ * Hotspots that already carry SKUs (from the item list) are confirmed by SKU; the rest are found by
+ * their printed name. In-store-only hotspots are left as they are.
+ */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
-  const candidates = await searchProducts(
-    hotspots.map((h) => h.label),
-    (done) => onProgress(done, hotspots.length),
+  const bySku = hotspots.filter((h) => !h.inStoreOnly && h.skus.length);
+  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length);
+  const total = bySku.length + byName.length;
+  const skuResults = await findBySkus(bySku.map((h) => h.skus));
+  onProgress(bySku.length, total);
+  const nameResults = await searchProducts(
+    byName.map((h) => h.label),
+    (done) => onProgress(bySku.length + done, total),
   );
-  let k = 0;
-  return flyer.pages.map((page) => page.hotspots.map((h) => decide(h.label, h.priceText, h.skus, candidates[k++] ?? [])));
+  const skuMatch = new Map(bySku.map((h, i) => [h, skuResults[i] ?? []]));
+  const nameMatch = new Map(byName.map((h, i) => [h, nameResults[i] ?? []]));
+  return flyer.pages.map((page) =>
+    page.hotspots.map((h): Match => {
+      if (h.inStoreOnly) return { status: 'instore', candidates: [], chosen: [] };
+      const found = skuMatch.get(h);
+      if (found) {
+        return found.length
+          ? { status: 'kept', candidates: found, chosen: found.map((c) => c.objectID) }
+          : { status: 'offline', candidates: [], chosen: [] };
+      }
+      return decide(h.label, h.priceText, nameMatch.get(h) ?? []);
+    }),
+  );
 }
 
-/** The flyer with each hotspot's SKUs and objectIDs set from the chosen products; hotspots that kept SKUs are unchanged. */
+/** The flyer with each hotspot's products applied: objectIDs for item-list SKUs, SKUs and objectIDs for name matches. */
 export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlyer {
   return {
     ...flyer,
@@ -22,8 +43,10 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
       ...page,
       hotspots: page.hotspots.map((h, i) => {
         const match = matches[p]?.[i];
-        if (!match || match.status === 'kept') return h;
+        if (!match || match.status === 'instore' || match.status === 'offline') return h;
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
+        // Item-list SKUs are kept (all colours and sizes); only the products' objectIDs are added.
+        if (match.status === 'kept') return { ...h, objectIds: chosen.map((c) => c.objectID) };
         return { ...h, skus: chosen.map((c) => c.sku), objectIds: chosen.map((c) => c.objectID) };
       }),
     })),
@@ -31,7 +54,7 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
 }
 
 export function countByStatus(matches: Matches): Record<MatchStatus | 'unresolved', number> {
-  const counts = { kept: 0, matched: 0, review: 0, none: 0, unresolved: 0 };
+  const counts = { kept: 0, offline: 0, instore: 0, matched: 0, review: 0, none: 0, unresolved: 0 };
   for (const match of matches.flat()) {
     counts[match.status]++;
     if (match.status === 'review' && !match.chosen.length) counts.unresolved++;
@@ -40,7 +63,9 @@ export function countByStatus(matches: Matches): Record<MatchStatus | 'unresolve
 }
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
-  kept: 'SKU from Flyer Studio',
+  kept: 'From item list',
+  offline: 'Not online yet',
+  instore: 'In store only',
   matched: 'Matched',
   review: 'Check',
   none: 'Not found',
@@ -71,7 +96,7 @@ export function renderProducts(
     page.hotspots.forEach((hotspot, i) => {
       const match = matches[p]?.[i];
       if (!match) return;
-      if (options.reviewOnly && match.status !== 'review' && match.status !== 'none') return;
+      if (options.reviewOnly && !['review', 'none', 'offline'].includes(match.status)) return;
 
       const row = el('li', { className: `prow ${match.status}` });
       row.append(
@@ -85,8 +110,15 @@ export function renderProducts(
         ),
       );
 
-      if (match.status === 'kept') {
-        row.append(el('p', { className: 'muted', textContent: `Keeps ${hotspot.skus.join(', ')}.` }));
+      if (match.status === 'instore') {
+        row.append(el('p', { className: 'muted', textContent: 'Shown as in store only; no online link.' }));
+      } else if (match.status === 'offline') {
+        row.append(
+          el('p', {
+            className: 'muted',
+            textContent: `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. It uses its fallback link until they are.`,
+          }),
+        );
       } else if (match.status === 'none') {
         row.append(el('p', { className: 'muted', textContent: 'Scheels Search found nothing. This hotspot uses its search link.' }));
       } else {

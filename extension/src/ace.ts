@@ -18,7 +18,12 @@ export interface Candidate {
   inStock: boolean;
 }
 
-export type MatchStatus = 'kept' | 'matched' | 'review' | 'none';
+/**
+ * kept: SKUs came with the hotspot and some are online (candidates are those products, all chosen).
+ * offline: SKUs came with the hotspot but none is online yet. instore: in-store-only, not matched.
+ * matched / review / none: found by name search, automatically, needing a check, or not at all.
+ */
+export type MatchStatus = 'kept' | 'offline' | 'instore' | 'matched' | 'review' | 'none';
 
 export interface Match {
   status: MatchStatus;
@@ -88,6 +93,44 @@ export async function searchProducts(queries: string[], onProgress?: (done: numb
   return results.flat();
 }
 
+/**
+ * The online products carrying any of each hotspot's SKUs (from the item list), one ACE filter query per
+ * hotspot. An empty list means none of its SKUs is on scheels.com yet.
+ */
+export async function findBySkus(skuLists: string[][]): Promise<Candidate[][]> {
+  const results: Candidate[][] = [];
+  for (let i = 0; i < skuLists.length; i += QUERIES_PER_REQUEST) {
+    const batch = skuLists.slice(i, i + QUERIES_PER_REQUEST);
+    const res = await fetch(SEARCH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queries: batch.map((skus) => ({
+          indexName: INDEX,
+          branchName: 'search',
+          query: '',
+          filters: skus
+            .filter((sku) => /^\d{8,13}$/.test(sku))
+            .slice(0, 40)
+            .map((sku) => `variants.sku:"${sku}"`)
+            .join(' OR '),
+          page: 1,
+          pageSize: 10,
+          trackEvents: false,
+          dynamicRerank: false,
+        })),
+      }),
+    });
+    if (!res.ok) throw new Error(`Scheels Search answered ${res.status}.`);
+    const data = await res.json();
+    batch.forEach((_, j) => {
+      const hits: unknown[] = data?.results?.[j]?.hits ?? [];
+      results.push(hits.map(toCandidate).filter((c): c is Candidate => c !== null));
+    });
+  }
+  return results;
+}
+
 /** Products by objectID, for showing what a hotspot is already linked to. Unknown ids are left out. */
 export async function fetchProducts(objectIds: string[]): Promise<Candidate[]> {
   if (!objectIds.length) return [];
@@ -141,8 +184,7 @@ export function isConfident(label: string, priceText: string, candidate: Candida
   return printsOnlyRegular && printed.some((p) => candidate.retailPrices.some((r) => samePrice(p, r)));
 }
 
-export function decide(label: string, priceText: string, existingSkus: string[], candidates: Candidate[]): Match {
-  if (existingSkus.length) return { status: 'kept', candidates, chosen: [] };
+export function decide(label: string, priceText: string, candidates: Candidate[]): Match {
   if (!candidates.length) return { status: 'none', candidates, chosen: [] };
   const confident = candidates.filter((c) => isConfident(label, priceText, c));
   return confident.length

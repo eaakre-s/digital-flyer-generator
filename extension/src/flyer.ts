@@ -14,6 +14,7 @@ export interface Hotspot {
   box: { x: number; y: number; w: number; h: number };
   skus: string[];
   objectIds?: string[];
+  inStoreOnly?: boolean;
   fallback: { type: 'brand' | 'category' | 'search'; value: string };
   locked: boolean;
   confidence: 'high' | 'low';
@@ -58,6 +59,7 @@ function cleanHotspot(raw: any): Hotspot {
     },
     skus: Array.isArray(raw?.skus) ? raw.skus.map(text).filter(Boolean) : [],
     objectIds: Array.isArray(raw?.objectIds) ? raw.objectIds.map(text).filter(Boolean) : [],
+    inStoreOnly: raw?.inStoreOnly === true,
     fallback: { type: fallbackType, value: text(raw?.fallback?.value) || text(raw?.label) },
     locked: raw?.locked === true,
     confidence: raw?.confidence === 'high' ? 'high' : 'low',
