@@ -36,7 +36,7 @@ How it is used, per flyer:
 2. Upload the page images to ECOM Creative › Content Pages › Digital Flyers and publish them.
 3. In the Digital Flyer item, choose the `.json`. The importer searches Scheels Search (ACE, `search.scheels.com`) for every hotspot and ticks products whose brand, model name and printed price agree; check the rest ("Show only ones to check"). Then import. Each page finds its published image by name (`flyer-<campaign>-pNN`) and takes the asset id from the media server. Pages whose image is not published yet are imported without one and hidden on the site; publish them and import again. Fill in title, campaign and dates as shown, then save.
 
-Optional installation parameters: `endpoint` (default `scheelspoc`), `defaultHost` (default `cdn.media.amplience.net`) and `studioUrl` (the Flyer Studio artifact link).
+Installation parameters: `studioUrl` (the Flyer Studio share link, including its `?sk=` key; kept here rather than in the code because the hosted extension is public), and optionally `endpoint` (default `scheelspoc`) and `defaultHost` (default `cdn.media.amplience.net`).
 
 Once an item has pages, the extension opens on the **saved flyer**: each page image with its hotspots, where boxes can be moved, resized, drawn or deleted, and a hotspot's name, price, fallback link and products changed (products are found through Scheels Search). Changes go into the field; save the item to keep them. The import steps fold away under "Replace with a new Flyer Studio export".
 
