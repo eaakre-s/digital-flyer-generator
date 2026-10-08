@@ -1,5 +1,8 @@
 # Builds the Amplience importer extension and publishes it to GitHub Pages on every push to main.
 # Amplience loads it from https://<owner>.github.io/digital-flyer-generator/
+# Requires Settings > Pages > Source: GitHub Actions (a branch source would publish the repo files over it).
+# Build and deploy are separate jobs, as in GitHub's Pages starter workflow: the deploy job starts only
+# after the uploaded artifact is registered, which a single job can race.
 name: Deploy importer extension
 
 on:
@@ -14,14 +17,11 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,5 +35,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/extension
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

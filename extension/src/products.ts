@@ -1,25 +1,33 @@
-import { decide, findBySkus, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
+import { decide, fetchProducts, findBySkus, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
 import type { StudioFlyer } from './flyer';
 
 /** One Match per hotspot, indexed [page][hotspot]. */
 export type Matches = Match[][];
 
 /**
- * Hotspots that already carry SKUs (from the item list) are confirmed by SKU; the rest are found by
- * their printed name. In-store-only hotspots are left as they are.
+ * Hotspots that already carry SKUs (from the item list) are confirmed by SKU. Item-list items without SKUs
+ * arrive with Scheels Search ids built from vendor number + style, which are looked up directly. The rest
+ * are found by their printed name. In-store-only hotspots are left as they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
   const bySku = hotspots.filter((h) => !h.inStoreOnly && h.skus.length);
-  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length);
-  const total = bySku.length + byName.length;
+  const byStyle = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && h.objectIds?.length);
+  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && !h.objectIds?.length);
+  const total = bySku.length + byStyle.length + byName.length;
   const skuResults = await findBySkus(bySku.map((h) => h.skus));
-  onProgress(bySku.length, total);
+  const styleProducts = await fetchProducts([...new Set(byStyle.flatMap((h) => h.objectIds ?? []))]);
+  const styleById = new Map(styleProducts.map((c) => [c.objectID, c]));
+  const styleResults = byStyle.map((h) => (h.objectIds ?? []).map((id) => styleById.get(id)).filter((c): c is Candidate => !!c));
+  onProgress(bySku.length + byStyle.length, total);
   const nameResults = await searchProducts(
     byName.map((h) => h.label),
-    (done) => onProgress(bySku.length + done, total),
+    (done) => onProgress(bySku.length + byStyle.length + done, total),
   );
-  const skuMatch = new Map(bySku.map((h, i) => [h, skuResults[i] ?? []]));
+  const skuMatch = new Map([
+    ...bySku.map((h, i): [typeof h, Candidate[]] => [h, skuResults[i] ?? []]),
+    ...byStyle.map((h, i): [typeof h, Candidate[]] => [h, styleResults[i] ?? []]),
+  ]);
   const nameMatch = new Map(byName.map((h, i) => [h, nameResults[i] ?? []]));
   return flyer.pages.map((page) =>
     page.hotspots.map((h): Match => {
@@ -43,10 +51,15 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
       ...page,
       hotspots: page.hotspots.map((h, i) => {
         const match = matches[p]?.[i];
-        if (!match || match.status === 'instore' || match.status === 'offline') return h;
+        if (!match || match.status === 'instore') return h;
+        // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
+        if (match.status === 'offline') return { ...h, objectIds: [] };
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
-        // Item-list SKUs are kept (all colours and sizes); only the products' objectIDs are added.
-        if (match.status === 'kept') return { ...h, objectIds: chosen.map((c) => c.objectID) };
+        // Item-list SKUs are kept (all colours and sizes) and the products' objectIDs added; items found by
+        // style had no SKUs, so they take the products' SKUs.
+        if (match.status === 'kept') {
+          return { ...h, skus: h.skus.length ? h.skus : chosen.map((c) => c.sku), objectIds: chosen.map((c) => c.objectID) };
+        }
         return { ...h, skus: chosen.map((c) => c.sku), objectIds: chosen.map((c) => c.objectID) };
       }),
     })),
@@ -116,7 +129,9 @@ export function renderProducts(
         row.append(
           el('p', {
             className: 'muted',
-            textContent: `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. It uses its fallback link until they are.`,
+            textContent: hotspot.skus.length
+              ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. It uses its fallback link until they are.`
+              : 'Its item-list style was not found on scheels.com. It uses its fallback link; add a product with Show all products if it is online.',
           }),
         );
       } else if (match.status === 'none') {

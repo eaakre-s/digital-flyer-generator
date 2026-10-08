@@ -68,6 +68,7 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 .banner b{color:var(--warn)}
 .status{font-size:14px;color:var(--ink-2);min-height:20px}
 .status.err{color:var(--bad)}
+.pageerror{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad);border-radius:8px;padding:8px 12px;font-size:14px;font-weight:600}
 .sheetwrap{display:flex;justify-content:center;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
 .sheet{position:relative;width:100%;max-width:820px;box-shadow:0 8px 24px var(--shadow);background:#fff;touch-action:none;user-select:none}
 .sheet img{display:block;width:100%;height:auto;pointer-events:none}
@@ -89,6 +90,12 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 .inspector .hint{color:var(--ink-2);font-size:14px;margin:0}
 .inspector .problems{margin:0;padding-left:18px;color:var(--bad);font-size:13px}
 .inspector .note{font-size:13px;color:var(--ink-2);background:var(--panel-2);border-radius:5px;padding:8px}
+.sublabel{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:4px}
+.suggest input,#iListSearch{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-size:14px}
+.suggestions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.suggestions li{display:grid;grid-template-columns:1fr auto;gap:0 8px;font-size:14px}
+.suggestions li .sub,.suggestions .sub{grid-column:1;color:var(--ink-2);font-size:12px}
+.suggestions li button{grid-row:1/span 2;grid-column:2;align-self:center}
 label.check{display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600}
 label.check input{width:16px;height:16px;accent-color:var(--red)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -160,10 +167,12 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       </div>
       <div class="right">
         <button class="btn" id="genPageBtn" type="button" disabled>Generate this page</button>
+        <button class="btn" id="matchBtn" type="button" disabled>Match from item list</button>
         <button class="btn" id="drawBtn" type="button" aria-pressed="false">Draw box</button>
       </div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="pageerror" id="pageError" role="alert" hidden></div>
     <div class="sheetwrap"><div class="sheet" id="sheet"></div></div>
     <div class="legend">
       <span><i style="background:var(--ok)"></i>High confidence</span>
@@ -202,7 +211,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       </li>
       <li>
         <h3>Check every page</h3>
-        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. Click a box to select it, drag to move it, drag its corner to resize it, or use <b>Draw box</b> to add one. Fix the product name and price on the right. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
+        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag its corner to resize it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
       </li>
       <li>
         <h3>Save the files</h3>
@@ -252,7 +261,7 @@ const round1 = (v) => Math.round(v * 10) / 10;
 const state = {
   example: true, file: null, pdf: null,
   pages: [],          // {hotspots, status, error, items, url}
-  current: 0, selected: -1, drawing: false,
+  current: 0, selected: -1, drawing: false, listQuery: '',
   offers: [], abort: null, busy: false,
 };
 let sample = null, downloads = null;
@@ -263,7 +272,7 @@ const storeKey = () => state.file ? `flyer-studio:${state.file.name}:${state.fil
 function persist() {
   const key = storeKey(); if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status })) }));
+    localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' })) }));
     localStorage.setItem('flyer-studio:details', JSON.stringify(readDetails()));
   } catch {}
 }
@@ -290,7 +299,7 @@ const SAMPLE_ERRORS = {
   session_expired: 'Your Claude session expired. Sign in again, then retry.',
   image_rejected: 'Claude could not read this page image.',
   refused: 'Claude declined this page. Draw its boxes by hand.',
-  invalid_json: 'Claude’s answer could not be read. Generate this page again.',
+  invalid_json: 'Claude’s answer was cut off or could not be read, usually on a page with many products. Use Generate this page to try again; if it keeps failing, draw the boxes and let each fill from its area.',
   prompt_too_large: 'This page plus the item list is too large to send. Try without the item list.',
   upstream_error: 'Claude could not be reached. Generate this page again.',
 };
@@ -302,10 +311,12 @@ const STOP_BATCH = new Set(['not_granted', 'sampling_disabled', 'rate_limited', 
 // offer's Page / Item # / prices on its first row only, and list the offer's other colours and sizes
 // on the rows below it. They are read into offers: one per advertised item, with all of its SKUs.
 const COLUMN_PATTERNS = {
-  item: /^item\s*#?$/i, page: /^page$/i, brand: /^brand/i, vendor: /^vendor$/i, sku: /^skus?$/i,
+  item: /^item\s*#?$/i, page: /^page$/i, brand: /^brand/i, vendor: /^vendor$/i, vendorNo: /^vendor\s*(number|#|no\.?)$/i, sku: /^skus?$/i,
   style: /^style/i, desc: /description/i, retail: /^retail/i, sale: /^sale/i, inStore: /in\s*store\s*only/i,
 };
 const SKU_PATTERN = /^\d{8,13}$/;
+// Spreadsheets drop a leading zero when a SKU cell is stored as a number: 4312505020 is SKU 04312505020.
+const normalizeSku = (sku) => (/^\d{10}$/.test(sku) ? `0${sku}` : sku);
 
 function findHeader(rows) {
   for (let r = 0; r < Math.min(rows.length, 40); r++) {
@@ -322,6 +333,9 @@ function findHeader(rows) {
 
 const pageNumbers = (text) => (String(text).match(/\d+/g) || []).map(Number).filter((n) => n > 0 && n < 1000);
 
+// Each offer keeps its distinct products (one per description) with their own ids (see withStableIds), so a
+// hotspot can name one product of a grouped offer ("Blaze clothing"), or a product whose row lost its
+// Page and so was read as part of the offer above it.
 function parseOffers(rows) {
   const header = findHeader(rows);
   if (!header) return null;
@@ -334,12 +348,19 @@ function parseOffers(rows) {
     if (!r.some((c) => String(c).trim())) continue;
     // Section rows like "Page 24-25" or "PAGE 6-7 WATERFOWL" carry no SKU.
     if (!skuCell && /^page\s*\d/i.test(desc)) { sectionPages = pageNumbers(desc); current = null; continue; }
-    if (!skuCell && !item && !page) continue;
-    if (item || page || !current) {
+    // A row with no SKU, Item # or Page still counts when it has a style (colour rows like XT-BB).
+    if (!skuCell && !item && !page && !cell(r, 'style')) continue;
+    const brand = cell(r, 'brand'), vendor = cell(r, 'vendor'), vendorNo = cell(r, 'vendorNo');
+    // A row from another brand and vendor than its offer (CVA rows under a Savage offer) is its own item
+    // whose Item # and Page were left blank: it starts a new offer on the same pages. Store-wide offers
+    // (brand ALL, e.g. suppressor covers) keep their mixed-brand rows.
+    const otherMaker = current && skuCell && brand && !/^all$/i.test(current.brand)
+      && brand.toLowerCase() !== current.brand.toLowerCase() && vendor.toLowerCase() !== (current.vendor || '').toLowerCase();
+    if (item || page || !current || otherMaker) {
       current = {
-        id: `o${offers.length + 1}`, item, pages: page ? pageNumbers(page) : sectionPages,
-        brand: cell(r, 'brand'), desc, retail: cell(r, 'retail'), sale: cell(r, 'sale'),
-        styles: [], skus: [], allStyles: false, inStoreOnly: false, issues: [],
+        id: `o${offers.length + 1}`, item, pages: page ? pageNumbers(page) : otherMaker ? current.pages : sectionPages,
+        brand, vendor, vendorNo, desc, retail: cell(r, 'retail'), sale: cell(r, 'sale'),
+        styles: [], skus: [], products: [], allStyles: false, inStoreOnly: false, issues: [],
       };
       offers.push(current);
     }
@@ -348,13 +369,86 @@ function parseOffers(rows) {
     if (/^all\b/i.test(style) || /\ball\b/i.test(skuCell) || /^all$/i.test(current.brand)) current.allStyles = true;
     if (/^y(es)?$/i.test(cell(r, 'inStore'))) current.inStoreOnly = true;
     if (!current.desc && desc) current.desc = desc;
+    let product = current.products.find((p) => p.desc.toLowerCase() === (desc || current.desc).toLowerCase());
+    if (!product) {
+      product = { id: `${current.id}-${current.products.length + 1}`, desc: desc || current.desc, brand: brand || current.brand, vendor: vendor || current.vendor, vendorNo: vendorNo || current.vendorNo, retail: cell(r, 'retail'), sale: cell(r, 'sale'), styles: [], skus: [] };
+      current.products.push(product);
+    }
+    if (style) product.styles.push(style);
     for (const token of skuCell.split(/[\s,;/]+/).filter(Boolean)) {
-      if (SKU_PATTERN.test(token)) { if (!current.skus.includes(token)) current.skus.push(token); }
-      else if (/\d\.\d+e\+\d+/i.test(token)) current.issues.push(`SKU shown as ${token} in the sheet (number format); fix it in the sheet`);
+      if (SKU_PATTERN.test(token)) {
+        const sku = normalizeSku(token);
+        if (!current.skus.includes(sku)) current.skus.push(sku);
+        if (!product.skus.includes(sku)) product.skus.push(sku);
+      } else if (/\d\.\d+e\+\d+/i.test(token)) current.issues.push(`SKU shown as ${token} in the sheet (number format); fix it in the sheet`);
       else if (/^tbd$/i.test(token)) current.issues.push('SKU is TBD in the sheet');
     }
   }
-  return offers.filter((o) => o.desc || o.skus.length || o.styles.length);
+  return withStableIds(offers.filter((o) => o.desc || o.skus.length || o.styles.length));
+}
+
+/** Short hash of a string (FNV-1a), base 36. */
+function shortHash(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+// Ids come from each entry's own content (item #, brand, description, first SKU), not its position, so a
+// hotspot stays linked to the same entry however the sheet is grouped. Products get the offer's id plus a suffix.
+function withStableIds(offers) {
+  const used = new Set();
+  const unique = (id) => { let out = id, n = 2; while (used.has(out)) out = `${id}${n++}`; used.add(out); return out; };
+  for (const o of offers) {
+    o.id = unique(`o${shortHash(`${o.item}|${o.brand}|${o.desc}|${o.skus[0] || o.styles[0] || ''}`).slice(0, 5)}`);
+    for (const p of o.products || []) p.id = unique(`${o.id}-${shortHash(`${p.desc}|${p.skus[0] || p.styles[0] || ''}`).slice(0, 3)}`);
+  }
+  return offers;
+}
+
+/**
+ * Re-points every hotspot's item-list links at the entries carrying its SKUs: repairs links saved before
+ * ids were stable, or made against an earlier version of the sheet. Hotspots without SKUs keep links that still exist.
+ */
+function relinkHotspots() {
+  if (!state.offers.length || !state.pages.length) return 0;
+  const index = offerIndex(state.offers);
+  const bySku = new Map();
+  for (const [id, entry] of index) {
+    const grouped = state.offers.find((o) => o.id === id)?.products?.length > 1;
+    if (grouped) continue; // link a grouped offer's products, not the whole offer
+    for (const sku of entry.skus || []) if (!bySku.has(sku)) bySku.set(sku, id);
+  }
+  let changed = 0;
+  for (const page of state.pages) {
+    for (const h of page.hotspots) {
+      const before = (h.offerIds || []).join(',');
+      const skus = (h.skus || []).map(normalizeSku);
+      const ids = skus.length
+        ? [...new Set(skus.map((sku) => bySku.get(sku)).filter(Boolean))]
+        : (h.offerIds || []).filter((id) => index.has(id));
+      h.offerIds = ids;
+      // Boxes linked to items that have no SKU get the items' style-based ids (added after some boxes were linked).
+      if (!skus.length && ids.length) {
+        const styleIds = fromOffers(ids.map((id) => index.get(id)), h.label || '', h.brand || '').styleIds;
+        if (styleIds.join(',') !== (h.objectIds || []).join(',')) { h.objectIds = styleIds; changed++; continue; }
+      }
+      if (ids.join(',') !== before) changed++;
+    }
+  }
+  return changed;
+}
+
+/** Offers and their products by id, each with the fields cleanHotspot needs. */
+function offerIndex(offers) {
+  const index = new Map();
+  for (const o of offers) {
+    index.set(o.id, o);
+    for (const p of o.products || []) {
+      if (o.products.length > 1) index.set(p.id, { ...p, allStyles: false, inStoreOnly: o.inStoreOnly, issues: [] });
+    }
+  }
+  return index;
 }
 
 // A sheet without recognisable columns: one offer per row, from its text.
@@ -363,8 +457,8 @@ function rowsAsOffers(rows) {
   return rows.map((r, i) => {
     const fields = r.map((v, j) => String(v).trim() ? `${header[j]}=${String(v).trim()}` : '').filter(Boolean);
     if (!fields.length) return null;
-    const skus = r.map((v) => String(v).trim()).filter((v) => SKU_PATTERN.test(v));
-    return { id: `r${i + 2}`, item: '', pages: [], brand: '', desc: fields.join('; '), retail: '', sale: '', styles: [], skus, allStyles: false, inStoreOnly: false, issues: [] };
+    const skus = r.map((v) => String(v).trim()).filter((v) => SKU_PATTERN.test(v)).map(normalizeSku);
+    return { id: `r${i + 2}`, item: '', pages: [], brand: '', vendor: '', desc: fields.join('; '), retail: '', sale: '', styles: [], skus, products: [], allStyles: false, inStoreOnly: false, issues: [] };
   }).filter(Boolean);
 }
 
@@ -374,9 +468,11 @@ $('sheetInput').addEventListener('change', async (ev) => {
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
     state.offers = parseOffers(rows) || rowsAsOffers(rows);
+    if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
     const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
     const issues = state.offers.filter((o) => o.issues.length).length;
     $('sheetName').textContent = `${file.name} · ${state.offers.length} items · ${skuCount} SKUs`;
+    updateButtons();
     setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list.${issues ? ` ${issues} have SKU problems in the sheet (scientific notation or TBD); those hotspots are flagged.` : ''}`);
   } catch (e) {
     state.offers = []; $('sheetName').textContent = 'None';
@@ -395,7 +491,7 @@ function offersForPage(i, items) {
   const n = i + 1;
   const pageWords = new Set(items.map((t) => t.text).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
   const printed = (o) => {
-    const words = [...new Set(`${o.desc} ${o.styles.join(' ')}`.toLowerCase().split(/[^a-z0-9]+/))].filter((w) => w.length >= 3 && pageWords.has(w));
+    const words = [...new Set(`${o.desc} ${(o.products || []).map((p) => p.desc).join(' ')} ${o.styles.join(' ')}`.toLowerCase().split(/[^a-z0-9]+/))].filter((w) => w.length >= 3 && pageWords.has(w));
     return words.some((w) => /\d/.test(w) && /[a-z]/.test(w)) || words.filter((w) => w.length >= 4).length >= 2;
   };
   const near = state.offers.filter((o) => o.pages.some((p) => Math.abs(p - n) <= NEARBY_PAGES));
@@ -404,11 +500,20 @@ function offersForPage(i, items) {
   return [...near, ...elsewhere].slice(0, MAX_OFFERS_PER_PAGE);
 }
 
+const brandLabel = (x) => (x.vendor && x.vendor.toLowerCase() !== (x.brand || '').toLowerCase() ? `${x.brand} (vendor ${x.vendor})` : x.brand);
+
 function offerLine(o) {
   const price = [o.retail && `reg ${o.retail}`, o.sale && `sale ${o.sale}`].filter(Boolean).join(', ');
   const skus = o.skus.length ? `${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'}` : 'no SKU';
   const notes = [o.allStyles && 'whole brand/category offer', o.inStoreOnly && 'in store only'].filter(Boolean).join(', ');
-  return [o.id, o.brand, o.desc, price, skus, o.styles.slice(0, 4).join(' '), notes].filter(Boolean).join(' | ');
+  const line = [o.id, brandLabel(o), o.desc, price, skus, o.styles.slice(0, 4).join(' '), notes].filter(Boolean).join(' | ');
+  if (!o.products || o.products.length < 2) return line;
+  const products = o.products.map((p) => {
+    const maker = p.brand && p.brand.toLowerCase() !== (o.brand || '').toLowerCase() ? `${p.brand} ` : '';
+    const price = [p.retail && `reg ${p.retail}`, p.sale && `sale ${p.sale}`].filter(Boolean).join(', ');
+    return `    ${p.id} | ${maker}${p.desc}${price ? ` | ${price}` : ''} | ${p.skus.length} SKU${p.skus.length === 1 ? '' : 's'}`;
+  });
+  return [line + ' | products:', ...products].join('\n');
 }
 
 // ---------- PDF ----------
@@ -422,11 +527,16 @@ $('pdfInput').addEventListener('change', async (ev) => {
     state.pages = Array.from({ length: pdf.numPages }, () => ({ hotspots: [], status: 'empty', error: '', items: null, url: '' }));
     const saved = restore();
     if (saved?.pages?.length === pdf.numPages) {
-      saved.pages.forEach((p, i) => Object.assign(state.pages[i], { hotspots: p.hotspots || [], status: p.status || 'empty' }));
+      saved.pages.forEach((p, i) => Object.assign(state.pages[i], {
+        hotspots: (p.hotspots || []).map((h) => ({ ...h, skus: (h.skus || []).map(normalizeSku) })),
+        status: p.status || 'empty',
+        error: p.error || (p.status === 'error' ? 'Generating this page failed in an earlier session. Generate it again.' : ''),
+      }));
       writeDetails(saved.details);
     } else if (!$('fTitle').value) {
       try { writeDetails(JSON.parse(localStorage.getItem('flyer-studio:details') || 'null')); } catch {}
     }
+    if (relinkHotspots()) persist();
     $('pdfName').textContent = `${file.name} · ${pdf.numPages} pages`;
     $('exampleBanner').hidden = true;
     setStatus(saved ? `Opened ${file.name}. Your earlier work on it was restored.` : `Opened ${file.name}: ${pdf.numPages} pages.`);
@@ -511,7 +621,7 @@ async function ensurePreview(i) {
 const PROMPT_RULES = `You turn one page of a printed SCHEELS sale flyer into shoppable hotspots.
 A hotspot is the area a shopper taps for one advertised product or offer: its photo, name and price together. Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Editorial pages (articles, partner logos) have no hotspots.
 Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
-When an item list is given, set offerIds to the item-list ids (o12) whose brand and product clearly match the hotspot, several when one hotspot advertises several items; leave it empty when unsure. Never invent ids.
+When an item list is given, set offerIds to the item-list ids whose brand and product clearly match the hotspot: a product id (like o3k9xa-7f2) when an item lists several products and the hotspot shows one of them, else the item id (like o3k9xa). Use several ids when one hotspot advertises several items. The vendor name can be closer to the printed brand than the brand column (SILENCER vs SilencerCo). Leave offerIds empty when unsure; never invent ids.
 confidence is "high" only when the box is unambiguous (and, if an item list was given, the match is certain); otherwise "low" with a short note saying what to check.`;
 
 function buildPrompt(i, items, regions, rows, locked, withImage) {
@@ -525,8 +635,8 @@ function buildPrompt(i, items, regions, rows, locked, withImage) {
   if (rows.length) lines.push(`Advertised items for this page from the item list (id | brand | description | prices | SKUs | styles | notes):\n${rows.map(offerLine).join('\n')}`);
   if (locked.length) lines.push(`A person already placed these hotspots; do not output hotspots for these products or areas:\n${locked.map((h) => `- ${h.label} at x ${h.box.x}, y ${h.box.y}, w ${h.box.w}, h ${h.box.h}`).join('\n')}`);
   lines.push(`Reply with only JSON of this shape:
-{"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"textItemIds":[38,39],"offerIds":["o12"],"confidence":"high","note":""}]}
-Use {"hotspots":[]} when the page has no products.`);
+{"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"offerIds":["o3k9xa"],"confidence":"high","note":""}]}
+Use {"hotspots":[]} when the page has no products. Dense pages can have 20 or more hotspots, so keep the reply compact: only these fields, notes under 15 words, empty strings rather than explanations.`);
   return lines.join('\n\n');
 }
 
@@ -535,29 +645,116 @@ const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Turns Claude's answer into a hotspot, taking SKUs, in-store flags and the fallback link from the
 // matched item-list offers: whole-brand or category offers fall back to the brand page, others to a
 // search for the sheet's brand and description.
-function cleanHotspot(h, offersById) {
-  const box = h?.box || {};
-  const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
-  const label = String(h?.label || '').trim();
-  const offerIds = Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [];
-  const offers = offerIds.map((id) => offersById.get(id));
+/** SKUs, brand, fallback link, in-store flag and sheet issues for a hotspot linked to these item-list entries. */
+function fromOffers(offers, label, printedBrand) {
   const sheetBrand = offers.map((o) => o.brand).find((b) => b && !/^all$/i.test(b)) || '';
-  const brand = sheetBrand || String(h?.brand || '').trim();
+  // Sheets sometimes cut brand names short ("SILENCER" for SilencerCo); prefer the printed one then.
+  const brand = sheetBrand && printedBrand.toLowerCase().startsWith(sheetBrand.toLowerCase()) ? printedBrand : sheetBrand || printedBrand;
   const skus = [...new Set(offers.flatMap((o) => o.skus))].slice(0, 60);
-  const issues = offers.flatMap((o) => o.issues);
+  const issues = offers.flatMap((o) => o.issues || []);
   const wholeRange = offers.length > 0 && offers.every((o) => o.allStyles || !o.skus.length);
   const product = offers.find((o) => o.desc)?.desc || label.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '');
   const fallback = wholeRange && brand
     ? { type: 'brand', value: brand }
     : { type: 'search', value: [brand, product.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '')].filter(Boolean).join(' ') || label };
+  // Items listed without SKUs can still be found by their Scheels Search id, vendor number + style
+  // (21452-LEGACY-KB); colour-coded styles (XT-BB) also try their base style (21452-XT). The importer
+  // confirms these and fills in the real SKUs.
+  const styleIds = skus.length ? [] : [...new Set(offers.flatMap((o) => {
+    const vendorNo = String(o.vendorNo || '').trim();
+    if (!/^\d+$/.test(vendorNo)) return [];
+    return (o.styles || []).filter((st) => /^[A-Za-z0-9][\w.-]*$/.test(st)).flatMap((st) => {
+      const base = st.includes('-') ? st.slice(0, st.lastIndexOf('-')) : '';
+      return [`${vendorNo}-${st}`, ...(base ? [`${vendorNo}-${base}`] : [])];
+    });
+  }))].slice(0, 20);
+  return { brand, skus, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
+}
+
+function cleanHotspot(h, offersById) {
+  const box = h?.box || {};
+  const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
+  const label = String(h?.label || '').trim();
+  const offerIds = Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [];
+  const { brand, skus, styleIds, fallback, inStoreOnly, issues } = fromOffers(offerIds.map((id) => offersById.get(id)), label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
   return {
     label, priceText: String(h?.priceText || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
-    offerIds, skus, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly),
+    offerIds, skus, objectIds: styleIds, fallback, inStoreOnly,
     confidence: h?.confidence === 'high' && !issues.length ? 'high' : 'low', note, locked: false,
   };
+}
+
+// ---------- matching a box to the item list without Claude ----------
+const MATCH_STOPWORDS = new Set(['mens', 'womens', 'youth', 'kids', 'sale', 'reg', 'now', 'the', 'and', 'with', 'for', 'off', 'save']);
+const matchWords = (text) => String(text).toLowerCase().replace(/[®™'’]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !MATCH_STOPWORDS.has(w));
+const moneyIn = (text) => [...String(text).matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/g)].map((m) => Number(m[1].replace(/,/g, '')));
+
+// Each matchable entry (a product of a grouped offer, or the offer itself) with its words, built once per item list.
+let entryCache = { offers: null, entries: [], weight: new Map() };
+function matchEntries() {
+  if (entryCache.offers === state.offers) return entryCache;
+  const entries = [];
+  for (const o of state.offers) {
+    const parts = o.products && o.products.length > 1 ? o.products.filter((p) => p.skus.length) : [o];
+    for (const e of parts) {
+      const words = new Set(matchWords(`${e.desc} ${e.brand || o.brand} ${e.vendor || o.vendor || ''} ${(e.styles || []).join(' ')}`));
+      entries.push({ id: e.id || o.id, offer: o, entry: e, words, prices: moneyIn(`$${o.retail} $${o.sale} $${e.retail || ''} $${e.sale || ''}`) });
+    }
+  }
+  // Rare words ("Musselshell", "XG35") say more than common ones ("Scheels", "Pant").
+  const df = new Map();
+  for (const e of entries) for (const w of e.words) df.set(w, (df.get(w) || 0) + 1);
+  const weight = new Map([...df].map(([w, n]) => [w, Math.log((entries.length + 1) / n)]));
+  entryCache = { offers: state.offers, entries, weight };
+  return entryCache;
+}
+
+/** Item-list entries a box could be, best first: scored on shared (rarity-weighted) words, price and page. */
+function suggestEntries(h, pageNumber, limit = 5) {
+  const { entries, weight } = matchEntries();
+  const label = [...new Set(matchWords(`${h.label} ${h.brand || ''}`))].filter((w) => weight.has(w));
+  if (!label.length) return [];
+  const total = label.reduce((n, w) => n + weight.get(w), 0);
+  const printed = moneyIn(h.priceText);
+  const scored = [];
+  for (const e of entries) {
+    const shared = label.filter((w) => e.words.has(w));
+    if (!shared.length) continue;
+    let score = shared.reduce((n, w) => n + weight.get(w), 0) / total;
+    if (shared.some((w) => /\d/.test(w) && /[a-z]/.test(w))) score += 0.3;
+    if (printed.some((p) => e.prices.some((q) => Math.abs(p - q) < 0.01))) score += 0.4;
+    if (e.offer.pages.some((n) => Math.abs(n - pageNumber) <= NEARBY_PAGES)) score += 0.2;
+    scored.push({ ...e, score });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Links a hotspot to item-list entries, taking SKUs, fallback and in-store flag from them. */
+function linkToEntries(h, ids) {
+  const index = offerIndex(state.offers);
+  const entries = ids.map((id) => index.get(id)).filter(Boolean);
+  const derived = fromOffers(entries, h.label, h.brand || '');
+  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, fallback: derived.fallback, inStoreOnly: derived.inStoreOnly, brand: derived.brand });
+}
+
+const AUTO_MATCH_MIN = 1.0;   // shared words plus a price or model-number agreement
+const AUTO_MATCH_GAP = 0.25;  // clearly ahead of the next candidate
+
+function matchPageFromList(i) {
+  const p = state.pages[i];
+  let linked = 0;
+  for (const h of p.hotspots) {
+    if (h.skus?.length || h.objectIds?.length || h.inStoreOnly) continue;
+    const [best, next] = suggestEntries(h, i + 1, 2);
+    if (best && best.score >= AUTO_MATCH_MIN && (!next || best.score - next.score >= AUTO_MATCH_GAP)) {
+      linkToEntries(h, [best.id]);
+      linked++;
+    }
+  }
+  return linked;
 }
 
 async function generatePage(i, signal) {
@@ -572,7 +769,7 @@ async function generatePage(i, signal) {
     const locked = p.hotspots.filter((h) => h.locked);
     const offers = offersForPage(i, items);
     const result = await sample.json(buildPrompt(i, items, regions, offers, locked, withImage), options);
-    const offersById = new Map(state.offers.map((o) => [o.id, o]));
+    const offersById = offerIndex(state.offers);
     const fresh = (Array.isArray(result?.hotspots) ? result.hotspots : []).map((h) => cleanHotspot(h, offersById)).filter((h) => h.label);
     p.hotspots = [...locked, ...fresh];
     p.status = 'done';
@@ -580,7 +777,7 @@ async function generatePage(i, signal) {
     return null;
   } catch (e) {
     p.status = e?.code === 'cancelled' ? (p.hotspots.length ? 'done' : 'empty') : 'error';
-    p.error = e?.code === 'cancelled' ? '' : sampleError(e);
+    p.error = e?.code === 'cancelled' ? '' : `${sampleError(e)}${e?.code ? ` (${e.code})` : ''}`;
     return e;
   } finally {
     persist(); renderRail(); if (i === state.current) renderStage(); updateExport();
@@ -626,10 +823,81 @@ $('genBtn').addEventListener('click', () => {
   runBatch(pages);
 });
 $('genPageBtn').addEventListener('click', () => runBatch([state.current]));
+$('matchBtn').addEventListener('click', () => {
+  const linked = matchPageFromList(state.current);
+  persist(); renderStage(); renderRail(); updateExport();
+  setStatus(linked ? `Linked ${linked} box${linked === 1 ? '' : 'es'} on this page to the item list. Check them, then pick the rest from the suggestions.` : 'No box on this page had a clear item-list match. Select a box to see suggestions.');
+});
 $('stopBtn').addEventListener('click', () => state.abort?.abort());
+
+// ---------- filling one box from its area ----------
+/** PDF text items whose centre lies inside the box, in reading order. */
+async function textInBox(i, box) {
+  const items = await textItems(i);
+  const slack = 0.5;
+  return items
+    .filter((t) => {
+      const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+      return cx >= box.x - slack && cx <= box.x + box.w + slack && cy >= box.y - slack && cy <= box.y + box.h + slack;
+    })
+    .sort((a, b) => (Math.abs(a.y - b.y) < 0.6 ? a.x - b.x : a.y - b.y));
+}
+
+const AREA_PROMPT = `You fill in one shoppable hotspot on a printed SCHEELS sale flyer. You get the text printed inside the hotspot's box (in reading order; prices can be split into pieces like "$" "3,999" "99") and the advertised items from the ad's item list that may be on this page.
+Reply with only JSON: {"label":"brand and product name as printed","priceText":"price line as printed, e.g. Now $2,199.97 · Reg. $3,499.97","brand":"printed brand","offerIds":["o3k9xa"],"note":""}
+offerIds: every item-list id (or product id like o3k9xa-7f2) the box clearly advertises; several when one box shows several products; empty when unsure. Never invent ids. Put anything a reviewer should check in note.`;
+
+/**
+ * Fills a box from what is printed inside it: name, price and brand, and the item-list entries it
+ * advertises (which bring SKUs, the fallback link and the in-store flag). Uses Claude when this view
+ * can; otherwise matches the box's text against the item list directly.
+ */
+async function fillFromArea(i, h) {
+  const inside = await textInBox(i, h.box);
+  if (!inside.length) { setStatus('There is no printed text inside this box to fill it from. Type the name and price, then pick from the item list.', true); return false; }
+  const text = inside.map((t) => t.text).join(' ');
+  const items = await textItems(i);
+  if (sample) {
+    setStatus('Reading this area…');
+    const offers = offersForPage(i, items);
+    const prompt = [AREA_PROMPT, `Printed inside the box:\n${text}`, offers.length ? `Advertised items for this page (id | brand | description | prices | SKUs | styles | notes):\n${offers.map(offerLine).join('\n')}` : 'No item list was given; leave offerIds empty.'].join('\n\n');
+    try {
+      const r = await sample.json(prompt, { modelTier: 'default' });
+      h.label = String(r?.label || '').trim() || h.label;
+      h.priceText = String(r?.priceText || '').trim() || h.priceText;
+      h.brand = String(r?.brand || '').trim() || h.brand;
+      h.note = String(r?.note || '').trim();
+      const index = offerIndex(state.offers);
+      const ids = Array.isArray(r?.offerIds) ? r.offerIds.map(String).filter((id) => index.has(id)) : [];
+      if (ids.length) linkToEntries(h, ids);
+      else if (!h.fallback?.value) h.fallback = { type: 'search', value: h.label };
+      h.textItemIds = inside.map((t) => t.id);
+      setStatus(ids.length ? `Filled from this area and linked ${ids.length} item-list ${ids.length === 1 ? 'entry' : 'entries'}.` : 'Filled from this area. No item-list match: pick one from the suggestions if it should have one.');
+      return true;
+    } catch (e) {
+      if (e?.code === 'cancelled') return false;
+      setStatus(`${sampleError(e)} Filled from the item list instead.`, true);
+    }
+  }
+  // Without Claude: the printed text becomes the name and price, and a clear item-list match is linked.
+  const prices = inside.filter((t) => /\$|\d+\.\d\d|^\d{2,}$/.test(t.text)).map((t) => t.text).join(' ').replace(/\$\s+/g, '$');
+  h.label = h.label || inside.filter((t) => !/\$|^\d+$/.test(t.text)).slice(0, 6).map((t) => t.text).join(' ');
+  h.priceText = h.priceText || prices;
+  h.textItemIds = inside.map((t) => t.id);
+  const [best, next] = suggestEntries({ label: text, brand: '', priceText: text }, i + 1, 2);
+  if (best && best.score >= AUTO_MATCH_MIN && (!next || best.score - next.score >= AUTO_MATCH_GAP)) {
+    linkToEntries(h, [best.id]);
+    setStatus(`Filled from this area and linked "${best.entry.desc}" from the item list.`);
+  } else {
+    if (!h.fallback?.value) h.fallback = { type: 'search', value: h.label };
+    setStatus('Filled from this area. Pick the item-list entry from the suggestions.');
+  }
+  return true;
+}
 
 // ---------- checks ----------
 function problemsFor(h, items) {
+  if (h.reviewed) return [];
   const out = [];
   const owned = (items || []).filter((t) => h.textItemIds.includes(t.id));
   if (owned.length) {
@@ -640,16 +908,19 @@ function problemsFor(h, items) {
   }
   if (!h.label) out.push('Give the product a name.');
   if (!h.fallback?.value) out.push('Add a fallback link value.');
-  if (state.offers.length && !h.skus.length && !h.inStoreOnly) out.push('No item-list match. Add a SKU or rely on the fallback link.');
+  if (state.offers.length && !h.skus.length && !h.objectIds?.length && !h.inStoreOnly) out.push('No item-list match. Add a SKU or rely on the fallback link.');
   return out;
 }
+
+/** A box still to look at: low confidence or a failed check, unless a person marked it reviewed. */
+const needsCheck = (h, items) => !h.reviewed && (h.confidence === 'low' || problemsFor(h, items).length > 0);
 
 // ---------- rendering ----------
 function pageSummary(p) {
   if (p.status === 'working') return ['work', 'Generating'];
   if (p.status === 'error') return ['bad', 'Failed'];
   if (p.status === 'empty') return ['', 'Not generated'];
-  const low = p.hotspots.filter((h) => h.confidence === 'low' || problemsFor(h, p.items).length).length;
+  const low = p.hotspots.filter((h) => needsCheck(h, p.items)).length;
   if (!p.hotspots.length) return ['', 'No products'];
   return low ? ['warn', `${p.hotspots.length} · ${low} to check`] : ['ok', `${p.hotspots.length} hotspot${p.hotspots.length === 1 ? '' : 's'}`];
 }
@@ -665,12 +936,13 @@ function renderRail() {
     const [kind, text] = pageSummary(p);
     const b = el('button', { type: 'button' }, el('span', { className: 'pn', textContent: String(i + 1) }), el('span', { textContent: i === 0 ? 'Cover' : `Page ${i + 1}` }), el('span', { className: 'st' }, el('span', { className: `chip ${kind}`, textContent: text })));
     b.setAttribute('aria-current', String(i === state.current));
+    if (p.status === 'error' && p.error) b.title = p.error;
     b.addEventListener('click', () => showPage(i));
     list.append(el('li', {}, b));
   });
   const doneCount = state.pages.filter((p) => p.status === 'done').length;
   const total = state.pages.reduce((n, p) => n + p.hotspots.length, 0);
-  const check = state.pages.reduce((n, p) => n + p.hotspots.filter((h) => h.confidence === 'low' || problemsFor(h, p.items).length).length, 0);
+  const check = state.pages.reduce((n, p) => n + p.hotspots.filter((h) => needsCheck(h, p.items)).length, 0);
   $('summary').textContent = `${doneCount} of ${state.pages.length} pages done · ${total} hotspots · ${check} to check`;
 }
 
@@ -682,13 +954,14 @@ function renderStage() {
   $('pageTitle').textContent = state.example ? 'Page 26' : state.current === 0 ? 'Cover' : `Page ${state.current + 1}`;
   if (!p?.url) { sheet.append(el('div', { className: 'empty', textContent: 'Loading page…' })); return; }
   sheet.append(el('img', { src: p.url, alt: `Flyer ${state.example ? 'page 26' : `page ${state.current + 1}`}` }));
-  if (p.status === 'error' && p.error) setStatus(`Page ${state.current + 1}: ${p.error}`, true);
+  $('pageError').hidden = !(p.status === 'error' && p.error);
+  $('pageError').textContent = p.status === 'error' && p.error ? `This page failed to generate: ${p.error}` : '';
   p.hotspots.forEach((h, idx) => {
     const problems = problemsFor(h, p.items);
-    const box = el('div', { className: `hs${h.confidence === 'low' ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
+    const box = el('div', { className: `hs${h.confidence === 'low' && !h.reviewed ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
     box.setAttribute('role', 'button');
     box.setAttribute('aria-pressed', String(idx === state.selected));
-    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : h.confidence === 'low' ? ', check this one' : ''}`);
+    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : h.confidence === 'low' && !h.reviewed ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
     Object.assign(box.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
     box.append(el('span', { className: 'n', textContent: String(idx + 1) }), el('span', { className: 'grip', ariaHidden: 'true' }));
     box.dataset.idx = String(idx);
@@ -720,22 +993,73 @@ function renderInspector() {
   fval.addEventListener('change', () => edit((x) => { x.fallback.value = fval.value.trim(); }));
   const conf = el('select', { id: 'iConf' }, el('option', { value: 'high', textContent: 'High', selected: h.confidence === 'high' }), el('option', { value: 'low', textContent: 'Check', selected: h.confidence === 'low' }));
   conf.addEventListener('change', () => edit((x) => { x.confidence = conf.value; }));
+  const reviewed = el('input', { type: 'checkbox', id: 'iReviewed', checked: !!h.reviewed });
+  reviewed.addEventListener('change', () => edit((x) => { x.reviewed = reviewed.checked; }));
   const inStore = el('input', { type: 'checkbox', id: 'iInStore', checked: !!h.inStoreOnly });
   inStore.addEventListener('change', () => edit((x) => { x.inStoreOnly = inStore.checked; }));
-  const sheetItems = (h.offerIds || []).map((id) => state.offers.find((o) => o.id === id)).filter(Boolean);
+  const suggestionBlock = () => {
+    if (!state.offers.length) return [];
+    const wrap = el('div', { className: 'suggest' });
+    const query = el('input', { type: 'search', id: 'iListSearch', placeholder: 'Search the item list', value: state.listQuery || '' });
+    const list = el('ul', { className: 'suggestions' });
+    const fill = () => {
+      state.listQuery = query.value;
+      const probe = query.value.trim() ? { label: query.value, brand: '', priceText: '' } : h;
+      const suggested = suggestEntries(probe, state.current + 1, 6);
+      const index = offerIndex(state.offers);
+      const linkedEntries = (h.offerIds || [])
+        .filter((id) => !suggested.some((f) => f.id === id) && index.has(id))
+        .map((id) => { const entry = index.get(id); return { id, entry, offer: state.offers.find((o) => id === o.id || id.startsWith(`${o.id}-`)) || entry }; });
+      const found = [...linkedEntries, ...suggested];
+      list.replaceChildren(...(found.length ? found.map((f) => {
+        // A box can advertise several items (one photo of three Hornady lines): Add links one more, Remove unlinks it.
+        const linked = (h.offerIds || []).includes(f.id);
+        const use = el('button', { className: 'linkbtn', type: 'button', textContent: linked ? 'Remove' : 'Add' });
+        use.setAttribute('aria-label', `${linked ? 'Remove' : 'Add'} ${f.entry.desc}`);
+        use.addEventListener('click', () => {
+          const ids = linked ? (h.offerIds || []).filter((id) => id !== f.id) : [...(h.offerIds || []), f.id];
+          edit((x) => linkToEntries(x, ids));
+        });
+        const name = `${f.entry.brand || f.offer.brand} ${f.entry.desc}`;
+        const priced = f.entry.retail || f.entry.sale ? f.entry : f.offer;
+        const price = [priced.retail && `reg ${priced.retail}`, priced.sale && `sale ${priced.sale}`].filter(Boolean).join(', ');
+        return el('li', {}, el('span', { textContent: name }), el('span', { className: 'sub', textContent: [`p. ${f.offer.pages.join('/') || '?'}`, price, `${f.entry.skus.length} SKU${f.entry.skus.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') }), use);
+      }) : [el('li', { className: 'sub', textContent: 'No close items in the list.' })]));
+    };
+    query.addEventListener('input', fill);
+    fill();
+    return [el('div', { className: 'sublabel', textContent: 'Item list suggestions' }), query, list];
+  };
+  const sheetIndex = offerIndex(state.offers);
+  const sheetItems = (h.offerIds || []).map((id) => sheetIndex.get(id)).filter(Boolean);
 
   body.append(el('div', { className: 'pagetitle', textContent: `#${state.selected + 1}${h.locked ? ' · edited' : ''}` }));
   const problems = problemsFor(h, p.items);
   if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
+  body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
   body.append(
     field('Product', label), field('Price as printed', price), field('SKUs (comma separated)', skus),
     el('label', { className: 'check' }, inStore, ' In store only (no online link)'),
-    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${o.brand} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}` })] : []),
+    ...suggestionBlock(),
+    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${o.brand} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.objectIds?.length ? `. No SKU in the sheet; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
     el('div', { className: 'two' }, field('Fallback link', ftype), field('Confidence', conf)),
     field(h.fallback.type === 'brand' ? 'Brand' : h.fallback.type === 'category' ? 'Category' : 'Search for', fval),
     el('div', { className: 'mono', textContent: `x ${h.box.x}  y ${h.box.y}  w ${h.box.w}  h ${h.box.h}` }),
   );
+  if (!state.example) {
+    const fill = el('button', { className: 'btn', type: 'button', textContent: 'Fill from this area' });
+    fill.title = 'Read the text inside this box and link the item-list entries it advertises';
+    fill.addEventListener('click', async () => {
+      fill.disabled = true; fill.textContent = 'Reading\u2026';
+      const pageIndex = state.current;
+      const filled = await fillFromArea(pageIndex, h);
+      if (filled) { h.locked = true; persist(); }
+      if (pageIndex === state.current) renderStage();
+      renderRail();
+    });
+    body.append(fill);
+  }
   const del = el('button', { className: 'btn', type: 'button', textContent: 'Delete this hotspot' });
   del.addEventListener('click', () => { p.hotspots.splice(state.selected, 1); state.selected = -1; persist(); renderStage(); renderRail(); });
   body.append(del);
@@ -763,6 +1087,7 @@ function updateButtons() {
   $('genHint').textContent = state.busy ? '' : state.example ? 'Open a flyer PDF to turn on Generate.' : hints[claudeState] || '';
   $('genBtn').disabled = !ready || state.busy;
   $('genPageBtn').disabled = !ready || state.busy;
+  $('matchBtn').disabled = state.example || state.busy || !state.offers.length;
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
   $('drawBtn').setAttribute('aria-pressed', String(state.drawing));
@@ -783,6 +1108,7 @@ sheetEl.addEventListener('pointerdown', (ev) => {
     sheetEl.append(drag.draft);
   } else if (boxEl) {
     const idx = Number(boxEl.dataset.idx);
+    if (idx !== state.selected) state.listQuery = '';
     state.selected = idx;
     const h = p.hotspots[idx];
     drag = { mode: ev.target.classList.contains('grip') ? 'resize' : 'move', idx, start: pt, orig: { ...h.box }, moved: false };
@@ -817,7 +1143,12 @@ sheetEl.addEventListener('pointerup', (ev) => {
       p.hotspots.push({ label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: { type: 'search', value: '' }, confidence: 'high', note: '', locked: true });
       state.selected = p.hotspots.length - 1;
       state.drawing = false; updateButtons();
-      if (!state.example) p.status = 'done';
+      if (!state.example) {
+        p.status = 'done';
+        const drawn = p.hotspots[state.selected];
+        const pageIndex = state.current;
+        fillFromArea(pageIndex, drawn).then((filled) => { if (filled) { persist(); if (pageIndex === state.current) renderStage(); renderRail(); } });
+      }
     }
   } else if (drag.moved) { p.hotspots[drag.idx].locked = true; }
   drag = null;
@@ -864,7 +1195,7 @@ function flyerData() {
     pdfFile: state.file?.name || '',
     pages: state.pages.map((p, i) => ({
       imageName: imageName(d.campaign, i),
-      hotspots: p.hotspots.map((h) => ({ label: h.label, priceText: h.priceText, box: h.box, skus: h.skus, fallback: h.fallback, inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: h.confidence })),
+      hotspots: p.hotspots.map((h) => ({ label: h.label, priceText: h.priceText, box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: h.fallback, inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: h.confidence })),
     })),
   };
 }
