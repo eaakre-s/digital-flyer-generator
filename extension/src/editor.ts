@@ -51,34 +51,79 @@ const state = {
   aspect: 0,
 };
 let deps: EditorDeps;
-let writeTimer = 0;
+// Edits not yet written to the Amplience field (see applyChanges).
+let unapplied = false;
+let applying: Promise<void> | null = null;
 
 const hotspots = () => state.pages[state.page]?.hotspots ?? [];
 const selectedHotspot = (): Hotspot | undefined => hotspots()[state.selected];
 
-function setStatus(text: string, kind: 'info' | 'error' | 'ok' = 'info') {
-  const status = $('edStatus');
-  status.textContent = text;
-  status.dataset.kind = kind;
+/**
+ * pending: edits held in the extension; busy: being written to Amplience's form; ok: written, ready
+ * for Amplience's Save. Shown in the toolbar and at the top of the hotspot panel, which stays in view
+ * while the toolbar is scrolled away.
+ */
+type StatusKind = 'info' | 'pending' | 'busy' | 'ok' | 'error';
+let lastStatus: { text: string; kind: StatusKind } = { text: '', kind: 'info' };
+
+function setStatus(text: string, kind: StatusKind = 'info') {
+  lastStatus = { text, kind };
+  document.querySelectorAll<HTMLElement>('[data-ed-status]').forEach((node) => {
+    node.textContent = text;
+    node.dataset.kind = kind;
+  });
+}
+
+function statusBadge() {
+  const badge = el('span', { className: 'savestate', textContent: lastStatus.text });
+  badge.dataset.edStatus = '';
+  badge.dataset.kind = lastStatus.kind;
+  return badge;
 }
 
 /**
- * Writes the pages to the field after a short pause, so a run of quick changes is one write; `now`
- * skips the pause, for when the author may be about to click Save.
+ * Records an edit. Edits are not written to the Amplience field straight away: each write sends the
+ * whole flyer and holds up Amplience's form while it is processed. They are written together by
+ * applyChanges when the author changes page or leaves the extension (to click Save, say).
  */
-function changed(hotspot?: Hotspot, now = false) {
+function changed(hotspot?: Hotspot) {
   if (hotspot) hotspot.locked = true;
-  setStatus('Unsaved changes. Click Save at the top of Amplience to keep them.');
-  window.clearTimeout(writeTimer);
-  writeTimer = window.setTimeout(async () => {
-    // Half-typed filter rows and emptied fields are left out of what is saved.
-    const pages = structuredClone(state.pages).map((page) => ({
-      ...page,
-      hotspots: page.hotspots.map((h) => ({ ...h, fallback: toFallbackLink(h.fallback) })),
-    }));
-    const error = await deps.write(pages);
-    if (error) setStatus(error, 'error');
-  }, now ? 0 : 400);
+  unapplied = true;
+  setStatus('Unsaved edits', 'pending');
+}
+
+// Where the author last clicked or tabbed in the extension (the frame is taller than the screen, so
+// the busy overlay's card goes there rather than in the frame's centre).
+let lastInteractionY = 0;
+
+function showBusy(busy: boolean) {
+  const overlay = $('edBusy');
+  overlay.hidden = !busy;
+  if (busy) (overlay.firstElementChild as HTMLElement).style.top = `${Math.max(16, lastInteractionY - 24)}px`;
+}
+
+/** Writes all edits to the field in one go. */
+function applyChanges(): Promise<void> {
+  if (!unapplied) return applying ?? Promise.resolve();
+  unapplied = false;
+  setStatus('Updating hotspots…', 'busy');
+  showBusy(true);
+  // Half-typed filter rows and emptied fields are left out of what is saved.
+  const pages = structuredClone(state.pages).map((page) => ({
+    ...page,
+    hotspots: page.hotspots.map((h) => ({ ...h, fallback: toFallbackLink(h.fallback) })),
+  }));
+  applying = deps.write(pages).then((error) => {
+    applying = null;
+    showBusy(false);
+    if (error) {
+      unapplied = true;
+      setStatus(error, 'error');
+    } else if (!unapplied) {
+      setStatus('Ready. Click Save in Amplience', 'ok');
+    }
+  });
+  return applying;
 }
 
 // Ids already asked for, found or not: an id Scheels Search does not know must not be fetched again on
@@ -251,10 +296,8 @@ function typingInput(
   const node = el('input', { type: 'text', value, placeholder, disabled: readOnly, ...(id ? { id } : {}) }) as HTMLInputElement;
   node.addEventListener('input', () => {
     onInput(node.value);
-    hotspot.locked = true;
-    setStatus('Editing…');
+    changed(hotspot);
   });
-  node.addEventListener('change', () => changed(hotspot, true));
   return node;
 }
 
@@ -454,10 +497,8 @@ function descriptionInput(hotspot: Hotspot, readOnly: boolean) {
     const value = area.value.trim();
     if (value) hotspot.description = value;
     else delete hotspot.description;
-    hotspot.locked = true;
-    setStatus('Editing…');
+    changed(hotspot);
   });
-  area.addEventListener('change', () => changed(hotspot, true));
   return area;
 }
 
@@ -527,7 +568,13 @@ function renderInspector() {
     products.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its link below.' }));
   }
   products.append(renderSearch(hotspot));
-  panel.append(back, el('h3', { textContent: `Hotspot ${state.selected + 1}` }), details, products, renderFallback(hotspot));
+  panel.append(
+    el('div', { className: 'head' }, back, statusBadge()),
+    el('h3', { textContent: `Hotspot ${state.selected + 1}` }),
+    details,
+    products,
+    renderFallback(hotspot),
+  );
 
   const del = el('button', {
     type: 'button',
@@ -565,6 +612,8 @@ function select(index: number) {
 }
 
 function goTo(page: number) {
+  // Each page's edits are written when moving on, so a long session never builds up much unapplied work.
+  applyChanges();
   state.page = clamp(page, 0, state.pages.length - 1);
   state.drawing = false;
   select(-1);
@@ -748,7 +797,20 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
       state.drawing = !state.drawing;
       render();
     });
+    // Leaving the extension (to click Save, another field, or another tab) writes the edits. The
+    // pause lets a field being left record its last edit first.
+    const leave = () => window.setTimeout(applyChanges, 0);
+    document.addEventListener('pointerdown', (ev) => (lastInteractionY = ev.pageY), true);
+    document.addEventListener(
+      'focusin',
+      (ev) => (lastInteractionY = (ev.target as HTMLElement).getBoundingClientRect?.().top + window.scrollY || lastInteractionY),
+      true,
+    );
+    window.addEventListener('blur', leave);
+    window.addEventListener('pagehide', leave);
+    document.addEventListener('visibilitychange', () => document.hidden && leave());
   }
+  unapplied = false;
   setStatus('');
   render();
 }

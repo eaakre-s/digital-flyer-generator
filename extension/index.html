@@ -138,7 +138,49 @@
       #message { min-height: 20px; font-size: 13px; }
       #message[data-kind='error'], #edStatus[data-kind='error'] { color: var(--bad); }
       #message[data-kind='ok'] { color: var(--ok); }
-      #edStatus { margin-left: auto; font-size: 13px; }
+      #edStatus { margin-left: auto; }
+      /* With a hotspot open, its panel shows the state; the toolbar copy stays only for screen readers. */
+      #editor:has(#edInspector .savestate) #edStatus { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      .savestate { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+      .savestate:empty { display: none; }
+      .savestate::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--ink-3); }
+      .savestate[data-kind='pending'] { color: var(--warn); }
+      .savestate[data-kind='pending']::before { background: var(--warn); }
+      .savestate[data-kind='busy']::before {
+        width: 12px;
+        height: 12px;
+        background: none;
+        border: 2px solid var(--line-2);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      .savestate[data-kind='ok'] { color: var(--ok); }
+      .savestate[data-kind='ok']::before { content: '✓'; width: auto; height: auto; background: none; font-weight: 700; }
+      .savestate[data-kind='error'] { color: var(--bad); }
+      .savestate[data-kind='error']::before { background: var(--bad); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      body { position: relative; }
+      /* Covers the extension while edits are written; the card sits where the author last worked. */
+      .busy { position: absolute; inset: 0; z-index: 50; background: rgb(255 255 255 / 0.6); cursor: progress; }
+      .busycard {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: 0 4px 16px rgb(27 43 60 / 0.12);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .spinner { width: 18px; height: 18px; border-radius: 999px; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .savestate[data-kind='busy']::before, .spinner { animation: none; border-color: var(--accent); }
+      }
       .chip {
         display: inline-flex;
         align-items: center;
@@ -288,7 +330,7 @@
           </button>
         </div>
         <button id="edDraw" type="button" aria-pressed="false">+ Draw box</button>
-        <span id="edStatus" class="muted" role="status" aria-live="polite"></span>
+        <span id="edStatus" class="savestate" data-ed-status role="status" aria-live="polite"></span>
       </div>
       <div class="edlayout">
         <div class="sheet" id="edSheet"></div>
@@ -345,6 +387,10 @@
     </section>
 
     </details>
+
+    <div id="edBusy" class="busy" hidden>
+      <div class="busycard"><span class="spinner" aria-hidden="true"></span>Updating hotspots…</div>
+    </div>
 
     <script type="module" src="./src/main.ts"></script>
   </body>
