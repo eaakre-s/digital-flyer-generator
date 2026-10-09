@@ -86,19 +86,36 @@
                 },
                 "fallback": {
                   "title": "Link when no product",
-                  "allOf": [
-                    { "$ref": "https://scheels.com/partial/link#/definitions/link" },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "searchTerm": {
-                          "title": "Search term",
-                          "description": "Used only when no category or attribute is set: links to search results for this term.",
-                          "type": "string"
+                  "description": "The fields of https://scheels.com/partial/link, copied rather than referenced: resolving the partial for every hotspot slowed Amplience's editor. Keep the two in step.",
+                  "type": "object",
+                  "properties": {
+                    "category": { "title": "Category", "description": "The category key of the category to be linked", "type": "string" },
+                    "attributes": {
+                      "title": "Attribute Refinements",
+                      "type": "array",
+                      "items": {
+                        "title": "Attributes",
+                        "type": "object",
+                        "properties": {
+                          "attributeName": { "title": "Attribute Name", "type": "string" },
+                          "attributeValue": { "title": "Attribute Value", "type": "string" }
                         }
                       }
+                    },
+                    "onSale": { "title": "On Sale", "type": "boolean" },
+                    "urlSlug": { "title": "URL Slug", "description": "A path on scheels.com, or a full URL to another site", "type": "string" },
+                    "pageID": { "title": "Page ID", "description": "The page ID of the content page to be linked", "type": "string" },
+                    "productID": { "title": "Product ID", "description": "If linking to a PDP, enter a product ID here", "type": "string" },
+                    "anchor": { "title": "Anchor", "type": "string" },
+                    "useStoreAvailability": { "title": "Use Store Availability", "type": "boolean" },
+                    "newPage": { "title": "Open in New Page", "type": "boolean" },
+                    "clickID": { "title": "Click ID", "description": "Click ID for analytics tracking", "type": "string" },
+                    "searchTerm": {
+                      "title": "Search term",
+                      "description": "Used only when no category or attribute is set: links to search results for this term.",
+                      "type": "string"
                     }
-                  ]
+                  }
                 },
                 "description": {
                   "title": "Description",
