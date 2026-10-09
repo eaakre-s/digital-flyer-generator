@@ -22,6 +22,8 @@ const el = (tag: string, props: Record<string, unknown> = {}, ...kids: (Node | s
   return node;
 };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const hasProduct = (hotspot: Hotspot) => hotspot.skus.length > 0;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 const state = {
@@ -79,14 +81,25 @@ function imageUrl(page: FlyerPage) {
 
 function renderPageControls() {
   const select = $('edPageSelect') as HTMLSelectElement;
-  if (select.options.length !== state.pages.length) {
-    select.replaceChildren(
-      ...state.pages.map((page, i) =>
-        el('option', { value: String(i), textContent: `Page ${i + 1} · ${page.hotspots.length} hotspots${page.image ? '' : ' · no image'}` }),
-      ),
-    );
-  }
+  const labels = state.pages.map((page, i) => {
+    const missing = page.hotspots.filter((h) => !hasProduct(h)).length;
+    return [`Page ${i + 1}`, count(page.hotspots.length, 'hotspot'), missing && `${missing} without a product`, !page.image && 'no image']
+      .filter(Boolean)
+      .join(' · ');
+  });
+  // Rebuilt every render so the counts follow added and deleted boxes.
+  select.replaceChildren(...labels.map((label, i) => el('option', { value: String(i), textContent: label })));
   select.value = String(state.page);
+
+  const all = state.pages.flatMap((page) => page.hotspots);
+  const missing = all.filter((h) => !hasProduct(h)).length;
+  $('edSummary').textContent = [
+    count(state.pages.length, 'page'),
+    count(all.length, 'hotspot'),
+    missing && `${missing} without a product`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   ($('edPrev') as HTMLButtonElement).disabled = state.page === 0;
   ($('edNext') as HTMLButtonElement).disabled = state.page >= state.pages.length - 1;
   const draw = $('edDraw') as HTMLButtonElement;
@@ -114,7 +127,7 @@ function renderSheet() {
   });
   sheet.append(img);
   page.hotspots.forEach((h, i) => {
-    const linked = h.skus.length > 0;
+    const linked = hasProduct(h);
     const box = el('button', {
       type: 'button',
       className: `hs ${linked ? 'linked' : 'unlinked'}`,
@@ -138,7 +151,7 @@ function field(label: string, input: HTMLElement) {
 function productRow(hotspot: Hotspot, index: number) {
   const objectId = hotspot.objectIds?.[index];
   const product = objectId ? state.products.get(objectId) : undefined;
-  const text = product ? `${product.title} · SKU ${hotspot.skus[index]}` : `SKU ${hotspot.skus[index]}${objectId ? ` · ${objectId}` : ''}`;
+  const name = product?.title ?? (objectId ? `Product ${objectId}` : 'Product');
   const remove = el('button', { type: 'button', className: 'link', textContent: 'Remove', disabled: deps.readOnly() });
   remove.setAttribute('aria-label', `Remove ${product?.title ?? hotspot.skus[index]}`);
   remove.addEventListener('click', () => {
@@ -147,7 +160,7 @@ function productRow(hotspot: Hotspot, index: number) {
     changed(hotspot);
     render();
   });
-  return el('li', {}, el('span', { textContent: text }), remove);
+  return el('li', {}, el('span', { textContent: name }), el('span', { className: 'sku', textContent: `SKU ${hotspot.skus[index]}` }), remove);
 }
 
 function renderSearch(hotspot: Hotspot) {
@@ -211,14 +224,36 @@ function renderInspector() {
   panel.replaceChildren();
   const hotspot = selectedHotspot();
   if (!hotspot) {
+    const list = hotspots();
     panel.append(
+      el('h3', { textContent: `Page ${state.page + 1}` }),
       el('p', {
         className: 'muted',
-        textContent: hotspots().length
-          ? 'Select a box to edit it. Drag to move, drag its corner to resize. Draw box adds a new one.'
+        textContent: list.length
+          ? 'Pick a hotspot to edit it, here or on the page. Drag a box to move it, drag its corner to resize it.'
           : 'No hotspots on this page. Use Draw box to add one.',
       }),
     );
+    if (list.length) {
+      panel.append(
+        el(
+          'ul',
+          { className: 'hslist' },
+          ...list.map((h, i) => {
+            const pick = el(
+              'button',
+              { type: 'button' },
+              el('span', { className: 'num', textContent: String(i + 1) }),
+              el('span', { className: 'name', textContent: h.label || 'Unnamed' }),
+              ...(hasProduct(h) ? [] : [el('span', { className: 'chip review', textContent: 'No product' })]),
+            );
+            pick.addEventListener('click', () => select(i));
+            pick.dataset.idx = String(i);
+            return el('li', {}, pick);
+          }),
+        ),
+      );
+    }
     return;
   }
   const ro = deps.readOnly();
@@ -242,8 +277,11 @@ function renderInspector() {
     changed(hotspot);
   });
 
-  panel.append(
-    el('h3', { textContent: `Hotspot ${state.selected + 1}` }),
+  const back = el('button', { type: 'button', className: 'link back', textContent: '‹ All hotspots on this page' });
+  back.addEventListener('click', () => select(-1));
+  const details = el('div', { className: 'group' });
+  details.append(
+    el('h4', { textContent: 'Details' }),
     field('Product name', text(hotspot.label, (v) => (hotspot.label = v))),
     field('Price as printed', text(hotspot.priceText, (v) => (hotspot.priceText = v))),
     el(
@@ -253,15 +291,16 @@ function renderInspector() {
       field('Value', text(hotspot.fallback.value, (v) => (hotspot.fallback.value = v))),
     ),
     inStoreToggle(hotspot),
-    el('h4', { textContent: 'Products' }),
   );
+  const products = el('div', { className: 'group' }, el('h4', { textContent: 'Products' }));
   if (hotspot.skus.length) {
-    panel.append(el('ul', { className: 'linked' }, ...hotspot.skus.map((_, i) => productRow(hotspot, i))));
+    products.append(el('ul', { className: 'linked' }, ...hotspot.skus.map((_, i) => productRow(hotspot, i))));
     loadProductNames(hotspot.objectIds ?? []);
   } else {
-    panel.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its fallback link.' }));
+    products.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its fallback link.' }));
   }
-  panel.append(renderSearch(hotspot));
+  products.append(renderSearch(hotspot));
+  panel.append(back, el('h3', { textContent: `Hotspot ${state.selected + 1}` }), details, products);
 
   const del = el('button', {
     type: 'button',
@@ -279,7 +318,7 @@ function renderInspector() {
     select(-1);
     changed();
   });
-  panel.append(del);
+  panel.append(el('div', { className: 'group' }, del));
 }
 
 function render() {
@@ -427,6 +466,23 @@ function wirePointer() {
   });
 }
 
+// Hovering or focusing a hotspot in the side list outlines its box on the page, and the other way round.
+function hint(idx: string | undefined) {
+  document.querySelectorAll('.hs.hint, ul.hslist button.hint').forEach((node) => node.classList.remove('hint'));
+  if (idx === undefined) return;
+  document.querySelectorAll(`.hs[data-idx="${idx}"], ul.hslist button[data-idx="${idx}"]`).forEach((node) => node.classList.add('hint'));
+}
+
+function wireHints() {
+  for (const container of [$('edSheet'), $('edInspector')]) {
+    const target = (ev: Event) => (ev.target as HTMLElement).closest<HTMLElement>('.hs, ul.hslist button')?.dataset.idx;
+    container.addEventListener('pointerover', (ev) => hint(target(ev)));
+    container.addEventListener('pointerleave', () => hint(undefined));
+    container.addEventListener('focusin', (ev) => hint(target(ev)));
+    container.addEventListener('focusout', () => hint(undefined));
+  }
+}
+
 let wired = false;
 
 /** Shows the editor for `pages` (the field's current value). */
@@ -442,6 +498,7 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
   if (!wired) {
     wired = true;
     wirePointer();
+    wireHints();
     $('edPrev').addEventListener('click', () => goTo(state.page - 1));
     $('edNext').addEventListener('click', () => goTo(state.page + 1));
     ($('edPageSelect') as HTMLSelectElement).addEventListener('change', (e) => goTo(Number((e.target as HTMLSelectElement).value)));

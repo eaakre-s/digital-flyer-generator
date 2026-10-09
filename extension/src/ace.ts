@@ -50,7 +50,8 @@ function toCandidate(hit: any): Candidate | null {
   };
 }
 
-export async function searchBatch(batch: string[]): Promise<Candidate[][]> {
+/** Each query's results: by default the first few, enough for automatic matching; `page` and `pageSize` page further. */
+export async function searchBatch(batch: string[], { page = 1, pageSize = CANDIDATES } = {}): Promise<Candidate[][]> {
   const res = await fetch(SEARCH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,8 +60,8 @@ export async function searchBatch(batch: string[]): Promise<Candidate[][]> {
         indexName: INDEX,
         branchName: 'search',
         query,
-        page: 1,
-        pageSize: CANDIDATES,
+        page,
+        pageSize,
         trackEvents: false,
         dynamicRerank: false,
       })),

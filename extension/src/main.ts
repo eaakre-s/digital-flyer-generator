@@ -46,7 +46,7 @@ async function showCurrent() {
   const pages = (await sdk.field.getValue()) ?? [];
   const hotspots = pages.reduce((n, page) => n + (page.hotspots?.length ?? 0), 0);
   $('current').textContent = pages.length
-    ? `This item has ${pages.length} pages and ${hotspots} hotspots. Importing replaces them.`
+    ? `This item has ${pages.length} page${pages.length === 1 ? '' : 's'} and ${hotspots} hotspot${hotspots === 1 ? '' : 's'}. Importing replaces them.`
     : 'This item has no pages yet.';
   ($('importer') as HTMLDetailsElement).open = !pages.length;
   $('importerSummary').textContent = pages.length ? 'Replace with a new Flyer Studio export' : 'Import from Flyer Studio';

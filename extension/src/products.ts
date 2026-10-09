@@ -1,4 +1,4 @@
-import { decide, fetchProducts, findBySkus, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
+import { decide, fetchProducts, findBySkus, searchBatch, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
 import type { StudioFlyer } from './flyer';
 
 /** One Match per hotspot, indexed [page][hotspot]. */
@@ -53,8 +53,8 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
         const match = matches[p]?.[i];
         if (!match || match.status === 'instore') return h;
         // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
-        if (match.status === 'offline') return { ...h, objectIds: [] };
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
+        if (match.status === 'offline' && !chosen.length) return { ...h, objectIds: [] };
         // Item-list SKUs are kept (all colours and sizes) and the products' objectIDs added; items found by
         // style had no SKUs, so they take the products' SKUs.
         if (match.status === 'kept') {
@@ -91,6 +91,121 @@ const price = (c: Candidate) => {
   return regular !== undefined && regular !== sale ? `$${sale} (reg. $${regular})` : `$${sale}`;
 };
 
+const MORE_PAGE_SIZE = 10;
+
+/** A row's own search: what was searched, how far it has paged, and whether it is busy or done. */
+interface RowSearch {
+  open: boolean;
+  query: string;
+  page: number;
+  busy: boolean;
+  exhausted: boolean;
+  error: string;
+}
+const rowSearches = new WeakMap<Match, RowSearch>();
+const rowSearch = (match: Match, label: string): RowSearch => {
+  let search = rowSearches.get(match);
+  if (!search) {
+    search = { open: false, query: label, page: 0, busy: false, exhausted: false, error: '' };
+    rowSearches.set(match, search);
+  }
+  return search;
+};
+
+/**
+ * Runs a row's search and adds the products found to its candidates, unticked. A new query replaces the
+ * unticked candidates (ticked ones stay); `more` fetches the query's next page instead.
+ */
+async function runRowSearch(match: Match, search: RowSearch, more: boolean, onDone: () => void) {
+  const page = more ? search.page + 1 : 1;
+  search.busy = true;
+  search.error = '';
+  onDone();
+  try {
+    const [found] = await searchBatch([search.query], { page, pageSize: MORE_PAGE_SIZE });
+    if (!more) match.candidates = match.candidates.filter((c) => match.chosen.includes(c.objectID));
+    const known = new Set(match.candidates.map((c) => c.objectID));
+    match.candidates = [...match.candidates, ...found.filter((c) => !known.has(c.objectID))];
+    search.page = page;
+    search.exhausted = found.length < MORE_PAGE_SIZE;
+  } catch (error) {
+    search.error = `Scheels Search could not be reached (${(error as Error).message}).`;
+  } finally {
+    search.busy = false;
+    onDone();
+  }
+}
+
+/** The "Search Scheels" link, its query box when open, and "More results" once a search has run. */
+function searchControls(match: Match, label: string, key: string, readOnly: boolean, onChange: () => void) {
+  const search = rowSearch(match, label);
+  // The list is re-rendered on every change; put focus back on the control that was used.
+  const refocus = (id: string) => () => {
+    onChange();
+    document.getElementById(id)?.focus();
+  };
+  const wrap = el('div', { className: 'rowsearch' });
+  if (!search.open) {
+    const open = el('button', { type: 'button', className: 'link', textContent: 'Search Scheels', disabled: readOnly, id: `open-${key}` });
+    open.addEventListener('click', () => {
+      search.open = true;
+      refocus(`q-${key}`)();
+    });
+    wrap.append(open);
+  } else {
+    const input = el('input', { type: 'search', value: search.query, id: `q-${key}`, disabled: readOnly }) as HTMLInputElement;
+    input.setAttribute('aria-label', `Search Scheels for ${label}`);
+    const go = el('button', { type: 'button', textContent: search.busy ? 'Searching…' : 'Search', disabled: readOnly || search.busy, id: `go-${key}` });
+    const run = () => {
+      search.query = input.value.trim();
+      if (search.query) runRowSearch(match, search, false, refocus(`go-${key}`));
+    };
+    go.addEventListener('click', run);
+    input.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') {
+        e.preventDefault();
+        run();
+      }
+    });
+    wrap.append(input, go);
+  }
+  if (search.page > 0 || match.candidates.length) {
+    const more = el('button', {
+      type: 'button',
+      className: 'link',
+      textContent: search.exhausted ? 'No more results' : 'More results',
+      disabled: readOnly || search.busy || search.exhausted,
+      id: `more-${key}`,
+    });
+    more.addEventListener('click', () => runRowSearch(match, search, true, refocus(`more-${key}`)));
+    wrap.append(more);
+  }
+  if (search.error) wrap.append(el('span', { className: 'warn', textContent: search.error }));
+  return wrap;
+}
+
+// Longer candidate lists get a "Select all" box.
+const SELECT_ALL_FROM = 3;
+
+/** Ticks or clears every candidate in a row; shows as part-ticked when only some are. */
+function selectAll(match: Match, key: string, readOnly: boolean, onChange: () => void) {
+  const ids = match.candidates.map((c) => c.objectID);
+  const ticked = ids.filter((id) => match.chosen.includes(id)).length;
+  const box = Object.assign(document.createElement('input'), {
+    type: 'checkbox',
+    id: `all-${key}`,
+    checked: ticked === ids.length,
+    indeterminate: ticked > 0 && ticked < ids.length,
+    disabled: readOnly,
+  });
+  box.addEventListener('change', () => {
+    match.chosen = box.checked ? ids : [];
+    onChange();
+    document.getElementById(`all-${key}`)?.focus();
+  });
+  return el('label', { className: 'check selectall' }, box, el('span', { textContent: `Select all ${ids.length}` }));
+}
+
 const el = (tag: string, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElement => {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...kids);
@@ -123,18 +238,19 @@ export function renderProducts(
         ),
       );
 
+      const showCandidates = match.candidates.length > 0;
       if (match.status === 'instore') {
         row.append(el('p', { className: 'muted', textContent: 'Shown as in store only; no online link.' }));
-      } else if (match.status === 'offline') {
+      } else if (match.status === 'offline' && !showCandidates) {
         row.append(
           el('p', {
             className: 'muted',
             textContent: hotspot.skus.length
               ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. It uses its fallback link until they are.`
-              : 'Its item-list style was not found on scheels.com. It uses its fallback link; add a product with Show all products if it is online.',
+              : 'Its item-list style was not found on scheels.com. It uses its fallback link; search Scheels below if it is online.',
           }),
         );
-      } else if (match.status === 'none') {
+      } else if (match.status === 'none' && !showCandidates) {
         row.append(el('p', { className: 'muted', textContent: 'Scheels Search found nothing. This hotspot uses its search link.' }));
       } else {
         const list = el('ul', { className: 'cands' });
@@ -155,10 +271,14 @@ export function renderProducts(
             .join(' · ');
           list.append(el('li', {}, el('label', {}, box, el('span', { textContent: candidate.title }), el('span', { className: 'muted', textContent: details }))));
         });
+        if (match.candidates.length > SELECT_ALL_FROM) row.append(selectAll(match, `${p}-${i}`, options.readOnly, options.onChange));
         row.append(list);
         if (!match.chosen.length) {
           row.append(el('p', { className: 'muted', textContent: 'Nothing ticked: this hotspot uses its search link.' }));
         }
+      }
+      if (match.status !== 'instore') {
+        row.append(searchControls(match, hotspot.label, `${p}-${i}`, options.readOnly, options.onChange));
       }
       container.append(row);
     }),

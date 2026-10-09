@@ -17,6 +17,8 @@
         --bad: #c62828;
       }
       * { box-sizing: border-box; }
+      /* Element display rules (section, .row) would otherwise beat the hidden attribute. */
+      [hidden] { display: none !important; }
       body { margin: 0; padding: 4px 2px 12px; font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: var(--ink); background: var(--bg); }
       section { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
       section:first-of-type { border-top: 0; padding-top: 0; }
@@ -26,11 +28,21 @@
       button, .file { font: inherit; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); padding: 6px 12px; cursor: pointer; color: var(--ink); }
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
       button:disabled { opacity: 0.45; cursor: default; }
+      button.primary:disabled { opacity: 1; background: var(--panel); border-color: var(--line); color: var(--ink-2); }
+      button:not(:disabled):hover { border-color: var(--ink-2); }
+      button.primary:not(:disabled):hover { filter: brightness(0.95); border-color: var(--accent); }
+      button.icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; }
+      button.icon svg { width: 16px; height: 16px; }
+      #edDraw[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
       a { color: var(--accent); }
       button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
       :focus-visible, .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
       .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+      .pager { display: flex; align-items: center; gap: 4px; }
+      .pager select { height: 32px; }
+      #edStatus { margin-left: auto; }
       #message { min-height: 20px; }
       #message[data-kind='error'] { color: var(--bad); }
       #message[data-kind='ok'] { color: var(--ok); }
@@ -45,7 +57,9 @@
       th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
       th { position: sticky; top: 0; background: var(--panel); font-weight: 600; }
       td:first-child, td:nth-child(3) { font-variant-numeric: tabular-nums; }
-      details > summary { cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--ink); }
+      details { border-top: 1px solid var(--line); margin-top: 4px; }
+      #editor[hidden] + details { border-top: 0; margin-top: 0; }
+      details > summary { cursor: pointer; font-weight: 600; padding: 12px 0 4px; color: var(--ink); }
       .edlayout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
       @media (max-width: 760px) { .edlayout { grid-template-columns: 1fr; } }
       .sheet { position: relative; border: 1px solid var(--line); background: var(--panel); touch-action: none; user-select: none; }
@@ -54,21 +68,37 @@
       .sheet .empty { padding: 40px 16px; text-align: center; }
       .hs { position: absolute; padding: 0; border: 2px solid var(--ok); background: rgba(31, 122, 77, 0.12); border-radius: 3px; cursor: move; }
       .hs.unlinked { border-color: var(--warn); background: rgba(168, 90, 0, 0.14); }
+      .hs.hint { border-color: var(--accent); background: rgba(3, 155, 229, 0.22); z-index: 1; }
+      .hs.hint .n { background: var(--accent); }
+      ul.hslist button.hint { background: var(--panel); }
       .hs[aria-pressed='true'] { outline: 3px solid var(--accent); outline-offset: 1px; z-index: 2; }
       .hs .n { position: absolute; left: 0; top: 0; background: var(--ok); color: #fff; font: 600 11px/1 sans-serif; padding: 2px 4px; }
       .hs.unlinked .n { background: var(--warn); }
       .hs .grip { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent); border: 2px solid #fff; display: none; cursor: nwse-resize; }
       .hs[aria-pressed='true'] .grip { display: block; }
       .draft { position: absolute; border: 2px dashed var(--accent); background: rgba(3, 155, 229, 0.12); pointer-events: none; }
-      .inspector { display: flex; flex-direction: column; gap: 8px; }
-      .inspector h3, .inspector h4 { margin: 4px 0 0; font-size: 14px; }
+      .inspector { display: flex; flex-direction: column; gap: 12px; }
+      .inspector h3 { margin: 0; font-size: 15px; }
+      .inspector h4 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+      .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+      .inspector .back { align-self: flex-start; padding: 0; text-decoration: none; }
+      ul.hslist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 4px; }
+      ul.hslist li + li { border-top: 1px solid var(--line); }
+      ul.hslist button { display: flex; width: 100%; gap: 8px; align-items: baseline; border: 0; border-radius: 0; padding: 8px 10px; text-align: left; background: none; }
+      ul.hslist button:hover { background: var(--panel); }
+      ul.hslist .num { min-width: 20px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+      ul.hslist .name { flex: 1; }
       label.f { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-2); flex: 1; min-width: 120px; }
       label.f input, label.f select, select, input[type='search'] { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; background: var(--bg); }
       ul.linked, ul.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-      ul.linked li, ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+      ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+      ul.linked li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 6px 8px; background: var(--panel); border-radius: 4px; }
+      ul.linked .sku { font-size: 12px; color: var(--ink-2); grid-column: 1; }
+      ul.linked button { grid-column: 2; grid-row: 1 / span 2; }
       .search .row { align-items: flex-end; }
       label.check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
       button.danger { color: var(--bad); border-color: var(--bad); align-self: flex-start; }
+      button.danger:not(:disabled):hover { background: var(--bad); color: #fff; border-color: var(--bad); }
       #edStatus[data-kind='error'] { color: var(--bad); }
       .plist { list-style: none; margin: 0; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
       .prow { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
@@ -79,18 +109,31 @@
       .chip.none { color: var(--bad); }
       .cands { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
       .cands label { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; cursor: pointer; }
+      .selectall { font-weight: 600; }
+      .rowsearch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+      .rowsearch input[type='search'] { flex: 1; min-width: 180px; max-width: 360px; padding: 4px 8px; }
+      .rowsearch button:not(.link) { padding: 4px 10px; }
 
     </style>
   </head>
   <body>
     <section id="editor" hidden>
-      <h2>Saved flyer</h2>
+      <div class="head">
+        <h2>Saved flyer</h2>
+        <span id="edSummary" class="muted"></span>
+      </div>
       <div class="row">
-        <button id="edPrev" type="button" aria-label="Previous page">‹</button>
-        <label class="sr" for="edPageSelect">Page</label>
-        <select id="edPageSelect"></select>
-        <button id="edNext" type="button" aria-label="Next page">›</button>
-        <button id="edDraw" type="button" aria-pressed="false">Draw box</button>
+        <div class="pager">
+          <button id="edPrev" class="icon" type="button" aria-label="Previous page">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2" /></svg>
+          </button>
+          <label class="sr" for="edPageSelect">Page</label>
+          <select id="edPageSelect"></select>
+          <button id="edNext" class="icon" type="button" aria-label="Next page">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" /></svg>
+          </button>
+        </div>
+        <button id="edDraw" type="button" aria-pressed="false">+ Draw box</button>
         <span id="edStatus" class="muted" role="status" aria-live="polite"></span>
       </div>
       <div class="edlayout">
@@ -102,10 +145,10 @@
     <details id="importer" open>
       <summary id="importerSummary">Import from Flyer Studio</summary>
     <section>
-      <h2>Flyer pages</h2>
+      <h2>1. Flyer data</h2>
       <p id="current" class="muted">Connecting to Amplience…</p>
       <div class="row">
-        <label class="file">1. Choose flyer data (.json)<input id="fileInput" class="sr" type="file" accept=".json,application/json" /></label>
+        <label class="file">Choose file (.json)<input id="fileInput" class="sr" type="file" accept=".json,application/json" /></label>
         <span class="muted">Saved from <a id="studioLink" href="https://claude.ai/artifact/LZKiFFQj8WEiLuP8osgyRH" target="_blank" rel="noopener noreferrer">Flyer Studio<span class="sr"> (opens in a new tab)</span></a></span>
       </div>
       <p id="message" role="status" aria-live="polite"></p>
