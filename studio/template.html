@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Flyer Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,6 +84,8 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 .hs[aria-pressed="true"]{outline:3px solid var(--focus);outline-offset:1px;z-index:2}
 .hs .grip{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--focus);border:2px solid #fff;border-radius:2px;cursor:nwse-resize;display:none}
 .hs[aria-pressed="true"] .grip{display:block}
+.hs.multi .grip{display:none!important}
+.inspector .picked{margin:0;padding-left:18px;font-size:14px}
 .draft{position:absolute;border:2px dashed var(--focus);background:color-mix(in srgb,var(--focus) 12%,transparent);pointer-events:none}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
@@ -105,6 +108,21 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
 .linkbtn{border:0;background:none;padding:0;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
 .guide{border:1px solid var(--line);border-radius:10px;padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--panel);color:var(--ink);box-shadow:0 24px 60px var(--shadow)}
 .guide::backdrop{background:rgba(0,0,0,.4)}
+[hidden]{display:none!important}
+.colmap .guidebody{display:flex;flex-direction:column;gap:14px}
+.colmap .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.colmap .req{color:var(--red)}
+.colmap table{width:100%;border-collapse:collapse;font-size:13px}
+.colmap th,.colmap td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.colmap th{color:var(--ink-2);font-weight:600}
+.colmap .ask{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.colmap .ask ul{margin:0;padding-left:18px}
+.colmap .ask .msg{font-size:14px}
+.colmap .ask .msg.you{color:var(--ink-2)}
+.colmap .ask .reply{display:flex;gap:8px}
+.colmap .ask .reply input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:7px 9px;color:var(--ink)}
+.colmap .actions{display:flex;justify-content:flex-end;gap:8px}
+.sheetnote{font-size:13px;color:var(--ink-2)}
 .guidehead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
 .guidehead h2{font:800 24px/1 var(--display);text-transform:uppercase;margin:0}
 .guidebody{padding:14px 18px 20px;overflow:auto;font-size:15px}
@@ -133,6 +151,8 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       <button class="btn" id="guideBtn" type="button" aria-haspopup="dialog">How to publish a flyer</button>
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
+      <button class="btn" id="sheetCols" type="button" aria-haspopup="dialog" hidden>Columns</button>
+      <button class="btn" id="resetBtn" type="button" aria-haspopup="dialog">Start over</button>
     </div>
   </header>
 
@@ -193,6 +213,52 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
   </aside>
 </div>
 
+<dialog class="guide colmap" id="reset" aria-labelledby="resetTitle">
+  <div class="guidehead">
+    <h2 id="resetTitle">Start over</h2>
+    <button class="btn" id="resetClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead">Flyer Studio keeps your work in this browser so you can come back to it. Clearing it can’t be undone; save the flyer data first if you want to keep it. The page reloads afterwards, as for someone opening Flyer Studio for the first time.</p>
+    <div class="actions">
+      <button class="btn" id="resetFlyer" type="button">Clear this flyer</button>
+      <button class="btn primary" id="resetAll" type="button">Clear everything</button>
+    </div>
+    <p class="sheetnote"><b>Clear this flyer</b> removes the open PDF’s hotspots and the flyer details. <b>Clear everything</b> also removes every other flyer’s saved work and the remembered item list columns.</p>
+  </div>
+</dialog>
+
+<dialog class="guide colmap" id="colmap" aria-labelledby="colmapTitle">
+  <div class="guidehead">
+    <h2 id="colmapTitle">Item list columns</h2>
+    <button class="btn" id="colmapClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead" id="colmapLead"></p>
+    <div class="grid">
+      <label class="f">Tab<select id="cmTab"></select></label>
+      <label class="f">Header row<input id="cmHeader" type="number" min="1" step="1"></label>
+    </div>
+    <div class="grid" id="cmFields"></div>
+    <div class="ask" id="cmAsk" hidden>
+      <div id="cmChat"></div>
+      <form class="reply" id="cmReplyForm">
+        <label class="sr" for="cmReply">Reply to Claude</label>
+        <input id="cmReply" type="text" placeholder="Answer Claude, or describe the sheet (e.g. column K is the in-store flag)">
+        <button class="btn" id="cmSend" type="submit">Send</button>
+      </form>
+    </div>
+    <div>
+      <h3 class="sub">Preview</h3>
+      <div id="cmPreview" class="sheetnote"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="cmSkip" type="button">Don’t use an item list</button>
+      <button class="btn primary" id="cmUse" type="button">Use these columns</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog class="guide" id="guide" aria-labelledby="guideTitle">
   <div class="guidehead">
     <h2 id="guideTitle">How to publish a flyer</h2>
@@ -203,7 +269,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
     <ol class="steps">
       <li>
         <h3>Start the flyer</h3>
-        <p>Get the final flyer PDF from Creative, and the ad's item list (the marketing status sheet, as .xlsx or .csv) if there is one: Flyer Studio reads its Page, Brand, SKU, Style and In Store Only columns, so hotspots get exact SKUs. Click <b>Open flyer PDF</b>, then <b>Item list</b>. Fill in the title, the sale dates and a <b>campaign code</b>: lowercase letters and numbers, like <code>biggame26</code>. The campaign code names the page images and tags the flyer's analytics, so keep it the same from here to Amplience.</p>
+        <p>Get the final flyer PDF from Creative, and the ad's item list (the marketing status sheet, as .xlsx or .csv) if there is one: Flyer Studio reads its Page, Brand, SKU, Style and In Store Only columns, so hotspots get exact SKUs. Click <b>Open flyer PDF</b>, then <b>Item list</b>. Flyer Studio finds the columns it needs by name; when it can't, it shows the <b>Item list columns</b> window, where Claude suggests them and asks about anything unclear, and Generate stays off until you confirm them. <b>Columns</b> reopens it. Fill in the title, the sale dates and a <b>campaign code</b>: lowercase letters and numbers, like <code>biggame26</code>. The campaign code names the page images and tags the flyer's analytics, so keep it the same from here to Amplience.</p>
       </li>
       <li>
         <h3>Generate the hotspots</h3>
@@ -262,6 +328,7 @@ const state = {
   example: true, file: null, pdf: null,
   pages: [],          // {hotspots, status, error, items, url}
   current: 0, selected: -1, drawing: false, listQuery: '',
+  multi: new Set(),   // hotspots picked with Shift-click; two or more replace the single selection
   offers: [], abort: null, busy: false,
 };
 let sample = null, downloads = null;
@@ -310,25 +377,60 @@ const STOP_BATCH = new Set(['not_granted', 'sampling_disabled', 'rate_limited', 
 // Marketing's ad sheets (e.g. Late Hunt, ad 7051) have a title block above the header row, put each
 // offer's Page / Item # / prices on its first row only, and list the offer's other colours and sizes
 // on the rows below it. They are read into offers: one per advertised item, with all of its SKUs.
+// Header names seen on ad sheets for each field. UPC is left out on purpose: it is not the SKU the site
+// uses, so a sheet with only a UPC column is asked about rather than guessed.
 const COLUMN_PATTERNS = {
-  item: /^item\s*#?$/i, page: /^page$/i, brand: /^brand/i, vendor: /^vendor$/i, vendorNo: /^vendor\s*(number|#|no\.?)$/i, sku: /^skus?$/i,
-  style: /^style/i, desc: /description/i, retail: /^retail/i, sale: /^sale/i, inStore: /in\s*store\s*only/i,
+  item: /^(ad\s*)?(item|offer)\s*(#|no\.?|number)?$/i,
+  page: /^(ad\s*)?(page|pg)s?\.?\s*(#|no\.?|number)?$/i,
+  brand: /^(brand|manufacturer|mfg|mfr)\b/i,
+  vendor: /^vendor(\s*name)?$/i,
+  vendorNo: /^vendor\s*(number|#|no\.?|id)$/i,
+  sku: /^(item\s*)?skus?(\s*(#|no\.?|numbers?))?$/i,
+  style: /^style/i,
+  desc: /description|^(product|item)(\s*name)?$|^copy$/i,
+  retail: /^(retail|reg(ular)?|msrp|compare\s*at)\b/i,
+  sale: /^(sale|ad\s*price|promo|offer\s*price|special|event\s*price)\b/i,
+  inStore: /(in\s*)?store\s*only/i,
 };
+// What each field is, for the column dialog and for Claude. Fields marked required gate Generate.
+const COLUMN_FIELDS = [
+  ['sku', 'SKU', 'The 11-digit Scheels SKU of each product, colour or size (not the UPC).'],
+  ['style', 'Style', 'Vendor style number; finds products when the SKU is missing.'],
+  ['desc', 'Description', 'Product name or description.'],
+  ['brand', 'Brand', 'Brand as it should appear.'],
+  ['page', 'Page', 'Flyer page(s) the item is printed on.'],
+  ['item', 'Item #', 'Ad item or offer number that groups rows into one advertised item.'],
+  ['vendor', 'Vendor', 'Vendor name, when it differs from the brand.'],
+  ['vendorNo', 'Vendor number', 'Vendor number; with the style it finds products without SKUs.'],
+  ['retail', 'Regular price', 'Regular / retail price.'],
+  ['sale', 'Sale price or offer', 'Ad price, or the offer (e.g. 20% off).'],
+  ['inStore', 'In store only', 'Yes when the item is sold in stores only.'],
+];
+const columnsComplete = (cols) => (cols.sku !== undefined || cols.style !== undefined) && (cols.desc !== undefined || cols.brand !== undefined);
 const SKU_PATTERN = /^\d{8,13}$/;
 // Spreadsheets drop a leading zero when a SKU cell is stored as a number: 4312505020 is SKU 04312505020.
 const normalizeSku = (sku) => (/^\d{10}$/.test(sku) ? `0${sku}` : sku);
 
-function findHeader(rows) {
-  for (let r = 0; r < Math.min(rows.length, 40); r++) {
-    const cells = rows[r].map((c) => String(c).trim());
-    const cols = {};
-    for (const [key, re] of Object.entries(COLUMN_PATTERNS)) {
-      const at = cells.findIndex((c) => re.test(c));
-      if (at >= 0) cols[key] = at;
-    }
-    if (cols.sku !== undefined && (cols.page !== undefined || cols.desc !== undefined || cols.brand !== undefined)) return { row: r, cols };
+/** Columns recognised by name in one row. */
+function columnsIn(cells) {
+  const cols = {};
+  const taken = new Set();
+  for (const [key, re] of Object.entries(COLUMN_PATTERNS)) {
+    const at = cells.findIndex((c, i) => !taken.has(i) && re.test(String(c).trim()));
+    if (at >= 0) { cols[key] = at; taken.add(at); }
   }
-  return null;
+  return cols;
+}
+
+/** The row among the first 40 whose cells name the most known columns (sheets put a title block above it). */
+function findHeader(rows) {
+  let best = null;
+  for (let r = 0; r < Math.min(rows.length, 40); r++) {
+    const cols = columnsIn(rows[r]);
+    const n = Object.keys(cols).length;
+    if (n >= 2 && (!best || n > Object.keys(best.cols).length)) best = { row: r, cols };
+  }
+  return best;
 }
 
 const pageNumbers = (text) => (String(text).match(/\d+/g) || []).map(Number).filter((n) => n > 0 && n < 1000);
@@ -336,8 +438,7 @@ const pageNumbers = (text) => (String(text).match(/\d+/g) || []).map(Number).fil
 // Each offer keeps its distinct products (one per description) with their own ids (see withStableIds), so a
 // hotspot can name one product of a grouped offer ("Blaze clothing"), or a product whose row lost its
 // Page and so was read as part of the offer above it.
-function parseOffers(rows) {
-  const header = findHeader(rows);
+function parseOffers(rows, header) {
   if (!header) return null;
   const { cols } = header;
   const cell = (r, key) => (cols[key] === undefined ? '' : String(r[cols[key]] ?? '').trim());
@@ -462,22 +563,211 @@ function rowsAsOffers(rows) {
   }).filter(Boolean);
 }
 
+// ---------- item list columns ----------
+// An uploaded sheet: every tab's rows, and the tab / header row / columns it is read with. Generate
+// stays off until the columns are confirmed: found by name, remembered from an earlier sheet with
+// the same headers, or chosen in the column dialog (where Claude can suggest them and ask questions).
+const sheet = { name: '', tabs: {}, tab: '', header: null, confirmed: true, chat: [] };
+const LAYOUTS_KEY = 'flyer-studio:sheet-layouts';
+const layoutKey = (cells) => cells.map((c) => String(c).trim().toLowerCase()).join('|');
+const savedLayouts = () => { try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY) || '{}'); } catch { return {}; } };
+const colLetter = (i) => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26));
+
+function applySheet() {
+  const rows = sheet.tabs[sheet.tab] || [];
+  state.offers = sheet.header ? parseOffers(rows, sheet.header) || [] : rowsAsOffers(rows.slice());
+  if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
+  const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
+  $('sheetName').textContent = sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
+  $('sheetCols').hidden = !sheet.name;
+  updateButtons();
+  return { skuCount, issues: state.offers.filter((o) => o.issues.length).length };
+}
+
 $('sheetInput').addEventListener('change', async (ev) => {
   const file = ev.target.files[0]; if (!file) return;
+  ev.target.value = '';
   try {
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
-    state.offers = parseOffers(rows) || rowsAsOffers(rows);
-    if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
-    const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
-    const issues = state.offers.filter((o) => o.issues.length).length;
-    $('sheetName').textContent = `${file.name} · ${state.offers.length} items · ${skuCount} SKUs`;
-    updateButtons();
-    setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list.${issues ? ` ${issues} have SKU problems in the sheet (scientific notation or TBD); those hotspots are flagged.` : ''}`);
+    sheet.name = file.name;
+    sheet.tabs = Object.fromEntries(wb.SheetNames.map((n) => [n, XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })]));
+    sheet.chat = [];
+    // The tab whose header names the most known columns.
+    const found = wb.SheetNames.map((tab) => ({ tab, header: findHeader(sheet.tabs[tab]) }))
+      .sort((a, b) => Object.keys(b.header?.cols || {}).length - Object.keys(a.header?.cols || {}).length)[0];
+    sheet.tab = found.tab;
+    sheet.header = found.header;
+    const rows = sheet.tabs[sheet.tab];
+    const remembered = sheet.header && savedLayouts()[layoutKey(rows[sheet.header.row])];
+    if (remembered) sheet.header = { row: sheet.header.row, cols: remembered };
+    // Read without asking only when the SKU, a description or brand, and the page were all found by name.
+    const cols = sheet.header?.cols || {};
+    const allFound = cols.sku !== undefined && (cols.desc !== undefined || cols.brand !== undefined) && cols.page !== undefined;
+    sheet.confirmed = !!sheet.header && (!!remembered || allFound);
+    const { skuCount, issues } = applySheet();
+    if (sheet.confirmed) {
+      setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list (${describeColumns()}).${issues ? ` ${issues} have SKU problems in the sheet (scientific notation or TBD); those hotspots are flagged.` : ''}`);
+    } else {
+      setStatus('Some item list columns could not be found by name. Confirm them before generating.', true);
+      openColumnDialog(true);
+    }
   } catch (e) {
-    state.offers = []; $('sheetName').textContent = 'None';
+    state.offers = []; sheet.name = ''; sheet.confirmed = true; $('sheetName').textContent = 'None'; updateButtons();
     setStatus('That item list could not be read. Save it as .xlsx or .csv.', true);
   }
+});
+
+function describeColumns() {
+  const cells = (sheet.tabs[sheet.tab] || [])[sheet.header?.row] || [];
+  return COLUMN_FIELDS.filter(([key]) => sheet.header?.cols[key] !== undefined)
+    .map(([key, label]) => `${label}: ${String(cells[sheet.header.cols[key]]).trim() || colLetter(sheet.header.cols[key])}`).join(', ');
+}
+
+// ----- the column dialog -----
+function renderColumnDialog() {
+  const rows = sheet.tabs[sheet.tab] || [];
+  const header = sheet.header || { row: 0, cols: {} };
+  const cells = rows[header.row] || [];
+  const missing = COLUMN_FIELDS.filter(([key]) => ['sku', 'desc', 'page'].includes(key) && header.cols[key] === undefined).map(([, label]) => label);
+  $('colmapLead').textContent = columnsComplete(header.cols)
+    ? `Check the columns Flyer Studio will read from ${sheet.name}.${missing.length ? ` Not found: ${missing.join(', ')}.` : ''}`
+    : `Flyer Studio could not tell which columns hold the SKU and the product description in ${sheet.name}. Pick them below${sample ? ', or answer Claude' : ''}; Generate stays off until you do.`;
+  $('cmTab').replaceChildren(...Object.keys(sheet.tabs).map((t) => el('option', { value: t, textContent: t, selected: t === sheet.tab })));
+  $('cmHeader').value = String(header.row + 1);
+  const options = (selected) => [el('option', { value: '', textContent: '— none —' }), ...cells.map((c, i) => el('option', { value: String(i), textContent: `${colLetter(i)}: ${String(c).trim() || '(blank)'}`, selected: i === selected }))];
+  $('cmFields').replaceChildren(...COLUMN_FIELDS.map(([key, label, help]) => {
+    const select = el('select', { title: help }, ...options(header.cols[key]));
+    select.addEventListener('change', () => {
+      const cols = { ...header.cols };
+      if (select.value === '') delete cols[key]; else cols[key] = Number(select.value);
+      sheet.header = { row: header.row, cols };
+      renderColumnDialog();
+    });
+    const required = key === 'sku' || key === 'desc';
+    return el('label', { className: 'f' }, el('span', {}, label, required ? el('span', { className: 'req', textContent: ' *' }) : ''), select);
+  }));
+  // Preview: the first items read with these columns.
+  const preview = sheet.header ? (parseOffers(rows, sheet.header) || []).filter((o) => o.desc || o.brand).slice(0, 6) : [];
+  $('cmPreview').replaceChildren(preview.length
+    ? el('table', {}, el('thead', {}, el('tr', {}, ...['Brand', 'Description', 'Pages', 'SKUs', 'Price'].map((h) => el('th', { textContent: h })))),
+      el('tbody', {}, ...preview.map((o) => el('tr', {}, ...[o.brand, o.desc, o.pages.join(', '), String(o.skus.length), [o.retail && `reg ${o.retail}`, o.sale && `sale ${o.sale}`].filter(Boolean).join(', ')].map((v) => el('td', { textContent: v || '—' }))))))
+    : el('span', { textContent: 'No items read yet with these columns.' }));
+  $('cmUse').disabled = !columnsComplete(header.cols);
+  // Claude's suggestions and questions.
+  $('cmAsk').hidden = !sample;
+  $('cmChat').replaceChildren(...sheet.chat.map((m) => m.role === 'assistant'
+    ? el('div', { className: 'msg' }, m.summary || '', ...(m.questions?.length ? [el('ul', {}, ...m.questions.map((q) => el('li', { textContent: q })))] : []))
+    : el('div', { className: 'msg you', textContent: `You: ${m.text}` })));
+}
+
+function openColumnDialog(askClaude = false) {
+  renderColumnDialog();
+  if (!$('colmap').open) $('colmap').showModal();
+  if (askClaude && sample && !sheet.chat.length) askClaudeAboutColumns();
+}
+
+$('cmTab').addEventListener('change', () => {
+  sheet.tab = $('cmTab').value;
+  sheet.header = findHeader(sheet.tabs[sheet.tab]) || { row: 0, cols: {} };
+  renderColumnDialog();
+});
+$('cmHeader').addEventListener('change', () => {
+  const row = Math.max(0, (Number($('cmHeader').value) || 1) - 1);
+  sheet.header = { row, cols: columnsIn((sheet.tabs[sheet.tab] || [])[row] || []) };
+  renderColumnDialog();
+});
+$('cmUse').addEventListener('click', () => {
+  sheet.confirmed = true;
+  const layouts = savedLayouts();
+  layouts[layoutKey((sheet.tabs[sheet.tab] || [])[sheet.header.row] || [])] = sheet.header.cols;
+  try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(layouts)); } catch {}
+  $('colmap').close();
+  const { skuCount } = applySheet();
+  setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list. These columns are remembered for sheets laid out the same way.`);
+});
+$('cmSkip').addEventListener('click', () => {
+  state.offers = []; sheet.name = ''; sheet.confirmed = true; sheet.header = null;
+  $('sheetName').textContent = 'None';
+  $('sheetCols').hidden = true;
+  $('colmap').close();
+  updateButtons();
+  setStatus('Not using an item list. Hotspots get their links from the printed names.');
+});
+$('colmapClose').addEventListener('click', () => $('colmap').close());
+$('sheetCols').addEventListener('click', () => openColumnDialog(!sheet.confirmed));
+
+// ---------- start over ----------
+// Everything Flyer Studio saves in this browser is under keys starting "flyer-studio:".
+function clearSaved(all) {
+  try {
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith('flyer-studio:'));
+    const remove = all ? keys : [storeKey(), 'flyer-studio:details'].filter(Boolean);
+    remove.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+  location.reload();
+}
+$('resetBtn').addEventListener('click', () => {
+  $('resetFlyer').disabled = state.example || !state.file;
+  $('reset').showModal();
+});
+$('resetClose').addEventListener('click', () => $('reset').close());
+$('resetFlyer').addEventListener('click', () => clearSaved(false));
+$('resetAll').addEventListener('click', () => clearSaved(true));
+
+// ----- asking Claude -----
+const COLUMN_PROMPT = `You help read a SCHEELS advertising item list (a spreadsheet of the products in a sale flyer) so its rows can be matched to the printed flyer.
+Fields to find (key: meaning):
+${COLUMN_FIELDS.map(([key, label, help]) => `${key}: ${label}. ${help}`).join('\n')}
+SKU or style, and description or brand, are needed; the others are optional. A UPC column is not the SKU.
+You get the sheet's tabs and the first rows of one tab, as "row | A: value | B: value …". Sheets often have a title block above the header row, and may give an item's page and prices on its first row only, with its colours and sizes on the rows below.
+Reply with only JSON: {"tab":"tab name","headerRow":5,"columns":{"sku":"F","desc":"D"},"summary":"one or two sentences on how the sheet is laid out","questions":["anything you cannot tell from the rows, as short questions"]}
+Use column letters. Leave a field out when the sheet has no such column. Ask only what changes which columns are read; no questions when you are sure.`;
+
+function sheetSample() {
+  const rows = (sheet.tabs[sheet.tab] || []).slice(0, 40);
+  const lines = rows.map((r, i) => `${i + 1} | ${r.map((c, j) => String(c).trim() ? `${colLetter(j)}: ${String(c).trim().slice(0, 40)}` : '').filter(Boolean).join(' | ')}`).filter((l) => !/\| $/.test(l));
+  return `Tabs: ${Object.keys(sheet.tabs).join(', ')}\nTab shown: ${sheet.tab}\n${lines.join('\n')}`;
+}
+
+function applyClaudeColumns(reply) {
+  if (reply?.tab && sheet.tabs[reply.tab]) sheet.tab = reply.tab;
+  const row = Math.max(0, (Number(reply?.headerRow) || 1) - 1);
+  const cols = {};
+  for (const [key] of COLUMN_FIELDS) {
+    const letter = String(reply?.columns?.[key] || '').trim().toUpperCase();
+    if (!/^[A-Z]{1,2}$/.test(letter)) continue;
+    cols[key] = letter.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  }
+  if (Object.keys(cols).length) sheet.header = { row, cols };
+}
+
+async function askClaudeAboutColumns(answer) {
+  const turns = [{ role: 'user', content: `${COLUMN_PROMPT}\n\n${sheetSample()}` }];
+  for (const m of sheet.chat) turns.push(m.role === 'assistant' ? { role: 'assistant', content: m.raw } : { role: 'user', content: m.text });
+  if (answer) {
+    sheet.chat.push({ role: 'user', text: answer });
+    turns.push({ role: 'user', content: `${answer}\n\nColumns chosen so far: ${describeColumns() || 'none'}. Reply with the full JSON again.` });
+  }
+  $('cmSend').disabled = true;
+  $('cmChat').append(el('div', { className: 'msg', textContent: 'Claude is reading the sheet…' }));
+  try {
+    const reply = await sample.json(turns, { modelTier: 'default' });
+    sheet.chat.push({ role: 'assistant', raw: JSON.stringify(reply), summary: String(reply?.summary || ''), questions: Array.isArray(reply?.questions) ? reply.questions.map(String).slice(0, 5) : [] });
+    applyClaudeColumns(reply);
+  } catch (e) {
+    sheet.chat.push({ role: 'assistant', raw: '{}', summary: `${sampleError(e)} Pick the columns yourself.`, questions: [] });
+  } finally {
+    $('cmSend').disabled = false;
+    renderColumnDialog();
+  }
+}
+
+$('cmReplyForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const text = $('cmReply').value.trim();
+  if (!text) return;
+  $('cmReply').value = '';
+  askClaudeAboutColumns(text);
 });
 
 // Offers that may be on one page. The sheet's page numbers can drift from the final PDF (Late Hunt's
@@ -523,7 +813,7 @@ $('pdfInput').addEventListener('change', async (ev) => {
   try {
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
     state.pages.forEach((p) => p.url && URL.revokeObjectURL(p.url));
-    Object.assign(state, { example: false, file, pdf, current: 0, selected: -1 });
+    Object.assign(state, { example: false, file, pdf, current: 0, selected: -1, multi: new Set() });
     state.pages = Array.from({ length: pdf.numPages }, () => ({ hotspots: [], status: 'empty', error: '', items: null, url: '' }));
     const saved = restore();
     if (saved?.pages?.length === pdf.numPages) {
@@ -618,11 +908,11 @@ async function ensurePreview(i) {
 }
 
 // ---------- generation ----------
-const PROMPT_RULES = `You turn one page of a printed SCHEELS sale flyer into shoppable hotspots.
-A hotspot is the area a shopper taps for one advertised product or offer: its photo, name and price together. Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Editorial pages (articles, partner logos) have no hotspots.
+const PROMPT_RULES = `You turn one page of a printed SCHEELS catalog into shoppable hotspots. It may be a sale flyer (products with prices and offers) or a lookbook or gift guide (products shown in lifestyle photos, often with no prices).
+A hotspot is the area a shopper taps for one product or offer: its photo together with its name and price when they are printed. Make a hotspot for every product a shopper could identify and buy, even when no price is printed. In a lifestyle scene with several products, give each product its own box around it; when products are named in numbered callouts or a product list, use those names and box each product (and its callout). Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Only pages with no shoppable products (articles, partner logos, a cover with no products) have no hotspots.
 Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
 When an item list is given, set offerIds to the item-list ids whose brand and product clearly match the hotspot: a product id (like o3k9xa-7f2) when an item lists several products and the hotspot shows one of them, else the item id (like o3k9xa). Use several ids when one hotspot advertises several items. The vendor name can be closer to the printed brand than the brand column (SILENCER vs SilencerCo). Leave offerIds empty when unsure; never invent ids.
-priceText is the item's price line as printed. A tag like SALE, NEW or CLEARANCE with no amount is not a price: when the item prints no sale price because a banner or heading covers it ("20% off all blaze clothing"), put that offer first, e.g. "20% off · Reg. $139.99".
+priceText is the item's price line as printed, or empty when the page prints no price for it; never make a price up. A tag like SALE, NEW or CLEARANCE with no amount is not a price: when the item prints no sale price because a banner or heading covers it ("20% off all blaze clothing"), put that offer first, e.g. "20% off · Reg. $139.99".
 description holds offer terms a shopper should know that the price line leaves out: the banner or heading offer that covers the item, exclusions, rebates, gifts with purchase, limits. Under 25 words, in plain sentences. Empty when the price line says it all.
 confidence is "high" only when the box is unambiguous (and, if an item list was given, the match is certain); otherwise "low" with a short note saying what to check.`;
 
@@ -684,13 +974,17 @@ function saleText(sale) {
 /**
  * A price line with no sale amount ("SALE · Reg. $139.99": the discount is printed elsewhere, often
  * a page banner) gets the matched item-list entry's sale price or offer: "20% off · Reg. $139.99".
- * Lines that already carry an amount are left as printed.
+ * Lines that already carry an amount are left as printed, and so are empty ones: a catalog that
+ * prints no price (a lookbook) should not gain one from the sheet.
  */
 function completePrice(priceText, entries) {
   const text = String(priceText || '').trim();
+  if (!text) return text;
   const withoutRegular = text.replace(/reg(ular)?\.?\s*\$\s*[\d,.]+/gi, '');
   if (/\$\s*\d|\d\s*%|\bfree\b/i.test(withoutRegular)) return text;
-  const priced = entries.flatMap((e) => [e, ...(e.products || [])]).find((e) => String(e.sale || '').trim());
+  // Sheets also fill the Sale column with "No Sale", "N/A" or "-" for items that are not discounted.
+  const realSale = (v) => { const t = String(v || '').trim(); return !!t && !/^(no\s*sale|n\/?a|none|tbd|-+)$/i.test(t); };
+  const priced = entries.flatMap((e) => [e, ...(e.products || [])]).find((e) => realSale(e.sale));
   if (!priced) return text;
   const rest = text.replace(/\b(sale|new|clearance|hot buy)\b/gi, '').replace(/^[\s·|,-]+|[\s·|,-]+$/g, '');
   const retail = String(priced.retail || '').trim().replace(/^\$/, '');
@@ -801,7 +1095,7 @@ async function generatePage(i, signal) {
     const fresh = (Array.isArray(result?.hotspots) ? result.hotspots : []).map((h) => cleanHotspot(h, offersById)).filter((h) => h.label);
     p.hotspots = [...locked, ...fresh];
     p.status = 'done';
-    if (i === state.current) state.selected = -1;
+    if (i === state.current) { state.selected = -1; state.multi = new Set(); }
     return null;
   } catch (e) {
     p.status = e?.code === 'cancelled' ? (p.hotspots.length ? 'done' : 'empty') : 'error';
@@ -873,7 +1167,7 @@ async function textInBox(i, box) {
 
 const AREA_PROMPT = `You fill in one shoppable hotspot on a printed SCHEELS sale flyer. You get the text printed inside the hotspot's box (in reading order; prices can be split into pieces like "$" "3,999" "99") and the advertised items from the ad's item list that may be on this page.
 Reply with only JSON: {"label":"brand and product name as printed","priceText":"price line as printed, e.g. Now $2,199.97 · Reg. $3,499.97","description":"","brand":"printed brand","offerIds":["o3k9xa"],"note":""}
-priceText: a tag like SALE with no amount is not a price; use the item list's sale price or offer instead when there is one. description: offer terms printed in the box that the price line leaves out (exclusions, rebates, gifts with purchase), under 25 words; empty when none.
+priceText: empty when no price is printed in the box (lookbooks and gift guides often print none); never make one up. A tag like SALE with no amount is not a price; use the item list's sale price or offer instead when there is one. description: offer terms printed in the box that the price line leaves out (exclusions, rebates, gifts with purchase), under 25 words; empty when none.
 offerIds: every item-list id (or product id like o3k9xa-7f2) the box clearly advertises; several when one box shows several products; empty when unsure. Never invent ids. Put anything a reviewer should check in note.`;
 
 /**
@@ -990,7 +1284,8 @@ function renderStage() {
     const problems = problemsFor(h, p.items);
     const box = el('div', { className: `hs${h.confidence === 'low' && !h.reviewed ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
     box.setAttribute('role', 'button');
-    box.setAttribute('aria-pressed', String(idx === state.selected));
+    box.setAttribute('aria-pressed', String(idx === state.selected || state.multi.has(idx)));
+    if (state.multi.has(idx)) box.classList.add('multi');
     box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : h.confidence === 'low' && !h.reviewed ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
     Object.assign(box.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
     box.append(el('span', { className: 'n', textContent: String(idx + 1) }), el('span', { className: 'grip', ariaHidden: 'true' }));
@@ -1005,9 +1300,15 @@ function field(labelText, input) { return el('label', { className: 'f' }, labelT
 function renderInspector() {
   const body = $('inspector'); body.replaceChildren();
   const p = currentPage();
+  if (state.multi.size > 1) { renderMultiInspector(body, p); return; }
   const h = p?.hotspots[state.selected];
   if (!h) {
-    body.append(el('p', { className: 'hint', textContent: p?.hotspots.length ? 'Select a box to check or fix it. Drag to move, drag the corner to resize, or use the arrow keys (Shift + arrows resizes).' : 'Generate this page, or use Draw box to add hotspots by hand.' }));
+    body.append(el('p', { className: 'hint', textContent: p?.hotspots.length ? 'Select a box to check or fix it. Drag to move, drag the corner to resize, or use the arrow keys (Shift + arrows resizes). Shift-click boxes to select several.' : 'Generate this page, or use Draw box to add hotspots by hand.' }));
+    if (p?.hotspots.length > 1 && !state.example) {
+      const all = el('button', { className: 'btn', type: 'button', textContent: 'Select all on this page' });
+      all.addEventListener('click', () => { state.multi = new Set(p.hotspots.map((_, i) => i)); state.selected = -1; renderStage(); });
+      body.append(all);
+    }
     return;
   }
   const edit = (fn) => { fn(h); h.locked = true; persist(); renderStage(); renderRail(); };
@@ -1097,8 +1398,39 @@ function renderInspector() {
   body.append(del);
 }
 
+/** Several hotspots picked: list them, with deleting them all at once. */
+function renderMultiInspector(body, p) {
+  const picked = [...state.multi].sort((a, b) => a - b);
+  body.append(
+    el('div', { className: 'pagetitle', textContent: `${picked.length} hotspots selected` }),
+    el('ul', { className: 'picked' }, ...picked.map((i) => el('li', { textContent: `#${i + 1} ${p.hotspots[i]?.label || 'unnamed'}` }))),
+  );
+  let confirming = false;
+  const del = el('button', { className: 'btn', type: 'button', textContent: `Delete ${picked.length} hotspots`, disabled: state.example });
+  del.addEventListener('click', () => {
+    if (!confirming) { confirming = true; del.textContent = `Click again to delete ${picked.length} hotspots`; return; }
+    picked.slice().reverse().forEach((i) => p.hotspots.splice(i, 1));
+    state.multi = new Set(); state.selected = -1;
+    persist(); renderStage(); renderRail();
+    setStatus(`Deleted ${picked.length} hotspots.`);
+  });
+  const clear = el('button', { className: 'btn', type: 'button', textContent: 'Clear selection' });
+  clear.addEventListener('click', () => { state.multi = new Set(); renderStage(); });
+  body.append(el('div', { className: 'two' }, del, clear), el('p', { className: 'hint', textContent: 'Shift-click a box to add it or take it out.' }));
+}
+
+/** Shift-click (or Cmd/Ctrl-click, Shift+Enter): adds a hotspot to the selection or takes it out. */
+function toggleMulti(idx) {
+  if (!state.multi.size && state.selected >= 0) state.multi.add(state.selected);
+  if (state.multi.has(idx)) state.multi.delete(idx); else state.multi.add(idx);
+  if (state.multi.size === 1) { state.selected = [...state.multi][0]; state.multi = new Set(); }
+  else state.selected = -1;
+  renderStage();
+}
+
 async function showPage(i) {
   if (state.example) return;
+  state.multi = new Set();
   state.current = clamp(i, 0, state.pages.length - 1); state.selected = -1;
   renderRail(); renderStage(); updateButtons();
   const target = state.current;
@@ -1109,17 +1441,18 @@ $('prevBtn').addEventListener('click', () => showPage(state.current - 1));
 $('nextBtn').addEventListener('click', () => showPage(state.current + 1));
 
 function updateButtons() {
-  const ready = !state.example && !!sample;
+  const ready = !state.example && !!sample && sheet.confirmed;
   const hints = {
     checking: 'Connecting to Claude\u2026',
     'no-runtime': 'Generate needs the page opened on claude.ai.',
     unavailable: 'Claude is not available in this view, so Generate is off.',
     'text-only': 'Claude can\u2019t see page images in this view, so it works from the PDF\u2019s text and photo positions. Check boxes closely.',
   };
-  $('genHint').textContent = state.busy ? '' : state.example ? 'Open a flyer PDF to turn on Generate.' : hints[claudeState] || '';
+  $('genHint').textContent = state.busy ? '' : state.example ? 'Open a flyer PDF to turn on Generate.'
+    : !sheet.confirmed ? 'Confirm the item list columns to turn on Generate.' : hints[claudeState] || '';
   $('genBtn').disabled = !ready || state.busy;
   $('genPageBtn').disabled = !ready || state.busy;
-  $('matchBtn').disabled = state.example || state.busy || !state.offers.length;
+  $('matchBtn').disabled = state.example || state.busy || !state.offers.length || !sheet.confirmed;
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
   $('drawBtn').setAttribute('aria-pressed', String(state.drawing));
@@ -1138,13 +1471,18 @@ sheetEl.addEventListener('pointerdown', (ev) => {
   if (state.drawing && !boxEl) {
     drag = { mode: 'draw', start: pt, draft: el('div', { className: 'draft' }) };
     sheetEl.append(drag.draft);
+  } else if (boxEl && (ev.shiftKey || ev.metaKey || ev.ctrlKey)) {
+    toggleMulti(Number(boxEl.dataset.idx));
+    ev.preventDefault();
+    return;
   } else if (boxEl) {
     const idx = Number(boxEl.dataset.idx);
+    state.multi = new Set();
     if (idx !== state.selected) state.listQuery = '';
     state.selected = idx;
     const h = p.hotspots[idx];
     drag = { mode: ev.target.classList.contains('grip') ? 'resize' : 'move', idx, start: pt, orig: { ...h.box }, moved: false };
-  } else { state.selected = -1; renderStage(); return; }
+  } else { state.selected = -1; state.multi = new Set(); renderStage(); return; }
   sheetEl.setPointerCapture(ev.pointerId);
   ev.preventDefault();
 });
@@ -1190,7 +1528,8 @@ sheetEl.addEventListener('pointerup', (ev) => {
 sheetEl.addEventListener('keydown', (ev) => {
   const boxEl = ev.target.closest('.hs'); if (!boxEl) return;
   const idx = Number(boxEl.dataset.idx), h = currentPage().hotspots[idx];
-  if (ev.key === 'Enter' || ev.key === ' ') { state.selected = idx; renderStage(); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.shiftKey) { toggleMulti(idx); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
+  if (ev.key === 'Enter' || ev.key === ' ') { state.multi = new Set(); state.selected = idx; renderStage(); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
   const step = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[ev.key];
   if (!step) return;
   ev.preventDefault();
