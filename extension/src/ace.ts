@@ -11,6 +11,8 @@ export interface Candidate {
   objectID: string;
   title: string;
   brand: string;
+  /** Category key of the product's primary category, e.g. "boots": usable as a link's `category`. */
+  category: string;
   /** The variant SKU commercetools and the site's /p/{sku} pages use. */
   sku: string;
   salePrices: number[];
@@ -43,6 +45,7 @@ function toCandidate(hit: any): Candidate | null {
     objectID: String(data.objectID),
     title: String(data.title ?? ''),
     brand: String(data.brand ?? ''),
+    category: String(data.primaryCategory ?? ''),
     sku: String(sku),
     salePrices: [prices.minSale, prices.maxSale].map(money).filter((v): v is number => v !== null),
     retailPrices: [prices.minRetail, prices.maxRetail].map(money).filter((v): v is number => v !== null),

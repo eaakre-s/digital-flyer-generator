@@ -4,116 +4,270 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Flyer import</title>
+    <!-- Inter, the typeface of Amplience's content forms. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
       :root {
-        --ink: #1f2a33;
-        --ink-2: #5f6b75;
-        --line: #d9dee3;
+        --ink: #1b2b3c;
+        --ink-2: #66758a;
+        --ink-3: #98a2b3;
+        --line: #e3e6ef;
+        --line-2: #c9cfe5;
         --bg: #ffffff;
-        --panel: #f5f7f9;
+        --panel: #f6f7fb;
+        --panel-2: #eceff6;
         --accent: #039be5;
-        --ok: #1f7a4d;
-        --warn: #a85a00;
-        --bad: #c62828;
+        --accent-strong: #0277bd;
+        --accent-soft: #e1f5fe;
+        --ok: #2e7d32;
+        --ok-soft: #e8f5e9;
+        --warn: #b26a00;
+        --warn-soft: #fff4e5;
+        --bad: #d32f2f;
+        --bad-soft: #fdecea;
+        --radius: 6px;
+        --radius-lg: 8px;
+        --shadow: none;
+        --ring: 0 0 0 3px rgb(3 155 229 / 0.25);
+        --control: 36px;
+        --field: 40px;
       }
       * { box-sizing: border-box; }
       /* Element display rules (section, .row) would otherwise beat the hidden attribute. */
       [hidden] { display: none !important; }
-      body { margin: 0; padding: 4px 2px 12px; font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: var(--ink); background: var(--bg); }
-      section { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
-      section:first-of-type { border-top: 0; padding-top: 0; }
-      h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+      body {
+        margin: 0;
+        padding: 4px 4px 16px;
+        font: 14px/1.5 Inter, -apple-system, 'Segoe UI', Arial, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
       p { margin: 0; }
+      a { color: var(--accent); text-underline-offset: 2px; }
+      a:hover { color: var(--accent-strong); }
       .muted { color: var(--ink-2); }
-      button, .file { font: inherit; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); padding: 6px 12px; cursor: pointer; color: var(--ink); }
-      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-      button:disabled { opacity: 0.45; cursor: default; }
-      button.primary:disabled { opacity: 1; background: var(--panel); border-color: var(--line); color: var(--ink-2); }
-      button:not(:disabled):hover { border-color: var(--ink-2); }
-      button.primary:not(:disabled):hover { filter: brightness(0.95); border-color: var(--accent); }
-      button.icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; }
-      button.icon svg { width: 16px; height: 16px; }
-      #edDraw[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
-      a { color: var(--accent); }
-      button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
-      :focus-visible, .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-      .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
-      .pager { display: flex; align-items: center; gap: 4px; }
-      .pager select { height: 32px; }
-      #edStatus { margin-left: auto; }
-      #message { min-height: 20px; }
-      #message[data-kind='error'] { color: var(--bad); }
-      #message[data-kind='ok'] { color: var(--ok); }
-      ul#details { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-      ul#details li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
-      ul#details .label { min-width: 110px; color: var(--ink-2); }
-      code { font: 13px ui-monospace, Menlo, monospace; background: var(--panel); padding: 1px 6px; border-radius: 3px; }
       .ok { color: var(--ok); }
       .warn { color: var(--warn); }
-      .tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
+      :focus-visible { outline: none; box-shadow: var(--ring); }
+      input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+
+      /* ---------- cards and headings ---------- */
+      section { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); }
+      section + section, details > section + section { margin-top: 16px; }
+      h2 { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+      .step { color: var(--ink-2); font-weight: 500; }
+      .step::after { content: '.'; }
+      .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+      #edSummary { font-size: 13px; }
+
+      /* ---------- controls ---------- */
+      button, .file {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: var(--control);
+        padding: 0 14px;
+        font: inherit;
+        font-weight: 500;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: background-color 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+      }
+      button:not(:disabled):hover, .file:hover { background: var(--panel); border-color: var(--ink-3); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .file:focus-within { box-shadow: var(--ring); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+      button.primary:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+      button.primary:disabled { opacity: 1; background: var(--panel-2); border-color: var(--line); color: var(--ink-3); }
+      button.icon { width: var(--control); padding: 0; }
+      button.icon svg { width: 16px; height: 16px; }
+      button.link {
+        min-height: 0;
+        padding: 2px 4px;
+        border: 0;
+        background: none;
+        color: var(--accent);
+        font-weight: 500;
+        border-radius: 2px;
+      }
+      button.link:not(:disabled):hover { background: none; color: var(--accent-strong); text-decoration: underline; }
+      button.danger { color: var(--bad); border-color: #fecaca; align-self: flex-start; }
+      button.danger:not(:disabled):hover { background: var(--bad); color: #fff; border-color: var(--bad); }
+      #edDraw[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+      select, input[type='text'], input[type='search'], label.f input, label.f select {
+        height: var(--field);
+        padding: 0 10px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius);
+        min-width: 0;
+        transition: border-color 0.12s, box-shadow 0.12s;
+      }
+      select:hover, input[type='text']:hover, input[type='search']:hover { border-color: var(--ink-3); }
+      select:focus, input[type='text']:focus, input[type='search']:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+      input::placeholder { color: var(--ink-3); }
+      label.f { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink); flex: 1; min-width: 120px; }
+      label.f input, label.f select, label.f textarea { font-weight: 400; }
+      textarea {
+        padding: 8px 10px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius);
+        resize: vertical;
+        min-height: 72px;
+      }
+      textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+      label.check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+
+      /* ---------- status text and chips ---------- */
+      #message { min-height: 20px; font-size: 13px; }
+      #message[data-kind='error'], #edStatus[data-kind='error'] { color: var(--bad); }
+      #message[data-kind='ok'] { color: var(--ok); }
+      #edStatus { margin-left: auto; font-size: 13px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: var(--panel-2);
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+      .chip.matched, .chip.kept { background: var(--ok-soft); color: var(--ok); }
+      .chip.review { background: var(--warn-soft); color: var(--warn); }
+      .chip.none { background: var(--bad-soft); color: var(--bad); }
+
+      /* ---------- importer ---------- */
+      details { margin-top: 16px; }
+      #editor[hidden] + details { margin-top: 0; }
+      details > summary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0 12px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+        border-radius: var(--radius);
+      }
+      details > summary::-webkit-details-marker { display: none; }
+      details > summary::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid var(--ink-2);
+        border-bottom: 2px solid var(--ink-2);
+        transform: rotate(-45deg);
+        transition: transform 0.15s;
+        margin: 0 4px;
+      }
+      details[open] > summary::before { transform: rotate(45deg); }
+      details > summary:hover { color: var(--accent-strong); }
+      ul#details { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: var(--panel); border-radius: var(--radius); }
+      ul#details:empty { display: none; }
+      ul#details li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+      ul#details .label { min-width: 110px; color: var(--ink-2); }
+
+      .plist { list-style: none; margin: 0; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+      .prow { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+      .prow:last-child { border-bottom: 0; }
+      .prow:hover { background: var(--panel); }
+      .phead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+      .cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+      .cands label { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; cursor: pointer; padding: 3px 6px; border-radius: 2px; }
+      .cands label:hover { background: var(--panel-2); }
+      .selectall { font-weight: 600; padding: 0 6px; }
+      .rowsearch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+      .rowsearch input[type='search'] { flex: 1; min-width: 180px; max-width: 360px; height: var(--control); }
+
+      .tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
       table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-      th { position: sticky; top: 0; background: var(--panel); font-weight: 600; }
+      th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+      tr:last-child td { border-bottom: 0; }
+      th { position: sticky; top: 0; background: var(--panel); font-size: 12px; font-weight: 600; color: var(--ink-2); }
       td:first-child, td:nth-child(3) { font-variant-numeric: tabular-nums; }
-      details { border-top: 1px solid var(--line); margin-top: 4px; }
-      #editor[hidden] + details { border-top: 0; margin-top: 0; }
-      details > summary { cursor: pointer; font-weight: 600; padding: 12px 0 4px; color: var(--ink); }
-      .edlayout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+
+      /* ---------- saved-flyer editor ---------- */
+      .pager { display: inline-flex; align-items: center; gap: 4px; }
+      .pager select, .rowsearch input[type='search'] { height: var(--control); }
+      .pager select { max-width: 320px; }
+      .edlayout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
       @media (max-width: 760px) { .edlayout { grid-template-columns: 1fr; } }
-      .sheet { position: relative; border: 1px solid var(--line); background: var(--panel); touch-action: none; user-select: none; }
+      .sheet {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+        box-shadow: var(--shadow);
+        touch-action: none;
+        user-select: none;
+      }
       .sheet img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-      .sheet.drawing { cursor: crosshair; }
-      .sheet .empty { padding: 40px 16px; text-align: center; }
-      .hs { position: absolute; padding: 0; border: 2px solid var(--ok); background: rgba(31, 122, 77, 0.12); border-radius: 3px; cursor: move; }
-      .hs.unlinked { border-color: var(--warn); background: rgba(168, 90, 0, 0.14); }
-      .hs.hint { border-color: var(--accent); background: rgba(3, 155, 229, 0.22); z-index: 1; }
-      .hs.hint .n { background: var(--accent); }
-      ul.hslist button.hint { background: var(--panel); }
-      .hs[aria-pressed='true'] { outline: 3px solid var(--accent); outline-offset: 1px; z-index: 2; }
-      .hs .n { position: absolute; left: 0; top: 0; background: var(--ok); color: #fff; font: 600 11px/1 sans-serif; padding: 2px 4px; }
+      .sheet.drawing { cursor: crosshair; box-shadow: 0 0 0 2px var(--accent); }
+      .sheet .empty { padding: 48px 16px; text-align: center; }
+      .hs { position: absolute; min-height: 0; padding: 0; border: 2px solid var(--ok); background: rgb(21 128 61 / 0.1); border-radius: 4px; cursor: move; }
+      .hs:not(:disabled):hover { background: rgb(21 128 61 / 0.18); border-color: var(--ok); }
+      .hs.unlinked { border-color: var(--warn); background: rgb(180 83 9 / 0.12); }
+      .hs.hint, .hs.hint:hover { border-color: var(--accent); background: rgb(2 132 199 / 0.2); z-index: 1; }
+      .hs[aria-pressed='true'] { box-shadow: 0 0 0 3px rgb(2 132 199 / 0.45); border-color: var(--accent); z-index: 2; }
+      .hs .n { position: absolute; left: -2px; top: -2px; background: var(--ok); color: #fff; font: 600 11px/1 Inter, Arial, sans-serif; padding: 3px 5px; border-radius: 3px 0 3px 0; }
       .hs.unlinked .n { background: var(--warn); }
-      .hs .grip { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent); border: 2px solid #fff; display: none; cursor: nwse-resize; }
+      .hs.hint .n, .hs[aria-pressed='true'] .n { background: var(--accent); }
+      .hs .grip { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent); border: 2px solid #fff; border-radius: 3px; display: none; cursor: nwse-resize; }
       .hs[aria-pressed='true'] .grip { display: block; }
-      .draft { position: absolute; border: 2px dashed var(--accent); background: rgba(3, 155, 229, 0.12); pointer-events: none; }
+      .draft { position: absolute; border: 2px dashed var(--accent); background: rgb(2 132 199 / 0.12); border-radius: 4px; pointer-events: none; }
+
       .inspector { display: flex; flex-direction: column; gap: 12px; }
-      .inspector h3 { margin: 0; font-size: 15px; }
-      .inspector h4 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
-      .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
-      .inspector .back { align-self: flex-start; padding: 0; text-decoration: none; }
-      ul.hslist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 4px; }
+      .inspector h3 { margin: 0; font-size: 16px; font-weight: 600; }
+      .inspector h4 { margin: 0 -16px 2px; padding: 0 16px 12px; font-size: 15px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--line); }
+      .inspector .back { align-self: flex-start; margin-left: -4px; }
+      /* Each group is a bordered box with its own heading, like Amplience's grouped fields. */
+      .group { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); }
+      .group:has(> button.danger:only-child) { padding: 0; border: 0; }
+      .group > button.link { align-self: flex-start; margin-left: -4px; }
+      ul.hslist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); }
       ul.hslist li + li { border-top: 1px solid var(--line); }
-      ul.hslist button { display: flex; width: 100%; gap: 8px; align-items: baseline; border: 0; border-radius: 0; padding: 8px 10px; text-align: left; background: none; }
-      ul.hslist button:hover { background: var(--panel); }
-      ul.hslist .num { min-width: 20px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+      ul.hslist button { justify-content: flex-start; width: 100%; gap: 10px; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 0; text-align: left; background: none; font-weight: 400; }
+      ul.hslist button:not(:disabled):hover, ul.hslist button.hint { background: var(--panel-2); }
+      ul.hslist .num { min-width: 20px; font-size: 12px; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+      ul.hslist button.hint .num { color: var(--accent); }
       ul.hslist .name { flex: 1; }
-      label.f { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-2); flex: 1; min-width: 120px; }
-      label.f input, label.f select, select, input[type='search'] { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; background: var(--bg); }
-      ul.linked, ul.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-      ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
-      ul.linked li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 6px 8px; background: var(--panel); border-radius: 4px; }
+      ul.linked, ul.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 4px 6px; border-radius: 2px; }
+      ul.results li:hover { background: var(--panel); }
+      ul.linked li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
       ul.linked .sku { font-size: 12px; color: var(--ink-2); grid-column: 1; }
       ul.linked button { grid-column: 2; grid-row: 1 / span 2; }
       .search .row { align-items: flex-end; }
-      label.check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
-      button.danger { color: var(--bad); border-color: var(--bad); align-self: flex-start; }
-      button.danger:not(:disabled):hover { background: var(--bad); color: #fff; border-color: var(--bad); }
-      #edStatus[data-kind='error'] { color: var(--bad); }
-      .plist { list-style: none; margin: 0; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
-      .prow { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-      .phead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
-      .chip { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; background: var(--panel); color: var(--ink-2); }
-      .chip.matched, .chip.kept { color: var(--ok); }
-      .chip.review { color: var(--warn); }
-      .chip.none { color: var(--bad); }
-      .cands { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
-      .cands label { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; cursor: pointer; }
-      .selectall { font-weight: 600; }
-      .rowsearch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-      .rowsearch input[type='search'] { flex: 1; min-width: 180px; max-width: 360px; padding: 4px 8px; }
-      .rowsearch button:not(.link) { padding: 4px 10px; }
-
+      .search .row button { min-height: var(--field); }
+      .filters { display: flex; flex-direction: column; gap: 6px; }
+      .filters:empty { display: none; }
+      .filter input { height: var(--control); }
+      .filter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 6px; align-items: center; }
+      .flabel { font-size: 14px; font-weight: 600; color: var(--ink); }
+      .preview { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 8px 10px; background: var(--panel); border-radius: var(--radius); font-size: 13px; overflow-wrap: anywhere; }
+      .preview a { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .copyfield { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; width: 100%; }
     </style>
   </head>
   <body>
@@ -145,7 +299,7 @@
     <details id="importer" open>
       <summary id="importerSummary">Import from Flyer Studio</summary>
     <section>
-      <h2>1. Flyer data</h2>
+      <h2><span class="step" aria-hidden="true">1</span><span class="sr">Step 1: </span>Flyer data</h2>
       <p id="current" class="muted">Connecting to Amplience…</p>
       <div class="row">
         <label class="file">Choose file (.json)<input id="fileInput" class="sr" type="file" accept=".json,application/json" /></label>
@@ -156,7 +310,7 @@
     </section>
 
     <section id="stepProducts" hidden>
-      <h2>2. Products</h2>
+      <h2><span class="step" aria-hidden="true">2</span><span class="sr">Step 2: </span>Products</h2>
       <p class="muted">Each hotspot is searched in Scheels Search. Products whose brand, name and printed price agree are ticked for you; check the rest. Search shows today's prices, so items whose sale has not started yet usually need a look.</p>
       <div class="row">
         <span id="productSummary" class="muted" role="status" aria-live="polite"></span>
@@ -166,7 +320,7 @@
     </section>
 
     <section id="step2" hidden>
-      <h2>3. Page images</h2>
+      <h2><span class="step" aria-hidden="true">3</span><span class="sr">Step 3: </span>Page images</h2>
       <p class="muted">Upload the page images from the Flyer Studio .zip to ECOM Creative › Content Pages › Digital Flyers and publish them. Pages find their image by name.</p>
       <div class="row">
         <span id="imageSummary" class="muted" role="status" aria-live="polite"></span>
@@ -183,10 +337,10 @@
     </section>
 
     <section id="step3" hidden>
-      <h2>4. Import</h2>
+      <h2><span class="step" aria-hidden="true">4</span><span class="sr">Step 4: </span>Import</h2>
       <div class="row">
         <button id="applyBtn" class="primary" type="button" disabled>Import pages into this item</button>
-        <span class="muted">Then save the item.</span>
+        <span class="muted">Then click Save at the top of Amplience.</span>
       </div>
     </section>
 

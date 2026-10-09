@@ -1,5 +1,17 @@
 import { fetchProducts, searchBatch, type Candidate } from './ace';
 import type { FlyerPage, Hotspot } from './flyer';
+import { copyText } from './copy';
+import {
+  defaultButtonText,
+  fillFromProducts,
+  isExternalUrl,
+  linkKind,
+  linkPath,
+  PATH_ATTRIBUTES,
+  toFallbackLink,
+  type FallbackLink,
+  type LinkKind,
+} from './link';
 
 /**
  * Edits the flyer already saved on the item: page images with their hotspots drawn on top. Boxes can
@@ -50,20 +62,33 @@ function setStatus(text: string, kind: 'info' | 'error' | 'ok' = 'info') {
   status.dataset.kind = kind;
 }
 
-/** Writes after a short pause so a drag or a run of keystrokes is one write. */
-function changed(hotspot?: Hotspot) {
+/**
+ * Writes the pages to the field after a short pause, so a run of quick changes is one write; `now`
+ * skips the pause, for when the author may be about to click Save.
+ */
+function changed(hotspot?: Hotspot, now = false) {
   if (hotspot) hotspot.locked = true;
-  setStatus('Changed. Save the item to keep it.');
+  setStatus('Unsaved changes. Click Save at the top of Amplience to keep them.');
   window.clearTimeout(writeTimer);
   writeTimer = window.setTimeout(async () => {
-    const error = await deps.write(structuredClone(state.pages));
+    // Half-typed filter rows and emptied fields are left out of what is saved.
+    const pages = structuredClone(state.pages).map((page) => ({
+      ...page,
+      hotspots: page.hotspots.map((h) => ({ ...h, fallback: toFallbackLink(h.fallback) })),
+    }));
+    const error = await deps.write(pages);
     if (error) setStatus(error, 'error');
-  }, 400);
+  }, now ? 0 : 400);
 }
 
+// Ids already asked for, found or not: an id Scheels Search does not know must not be fetched again on
+// every render, or the fetch and re-render would loop.
+const requestedProducts = new Set<string>();
+
 async function loadProductNames(ids: string[]) {
-  const missing = [...new Set(ids)].filter((id) => !state.products.has(id));
+  const missing = [...new Set(ids)].filter((id) => !state.products.has(id) && !requestedProducts.has(id));
   if (!missing.length) return;
+  missing.forEach((id) => requestedProducts.add(id));
   try {
     for (const product of await fetchProducts(missing)) state.products.set(product.objectID, product);
     renderInspector();
@@ -210,6 +235,232 @@ function renderSearch(hotspot: Hotspot) {
   return wrap;
 }
 
+/**
+ * A text input whose edits apply to the editor's state on every keystroke but are written to the
+ * Amplience field only when the input is left or Enter is pressed: each write makes Amplience
+ * re-process the whole flyer, which holds up its form while it does.
+ */
+function typingInput(
+  value: string,
+  placeholder: string,
+  readOnly: boolean,
+  hotspot: Hotspot,
+  onInput: (value: string) => void,
+  id?: string,
+) {
+  const node = el('input', { type: 'text', value, placeholder, disabled: readOnly, ...(id ? { id } : {}) }) as HTMLInputElement;
+  node.addEventListener('input', () => {
+    onInput(node.value);
+    hotspot.locked = true;
+    setStatus('Editing…');
+  });
+  node.addEventListener('change', () => changed(hotspot, true));
+  return node;
+}
+
+const SITE = 'https://www.scheels.com';
+
+/**
+ * The link a hotspot opens when it has no product, in the fields of the Amplience link partial: a
+ * category, attribute filters (brand, gender, …), on sale, and a search term as the last resort. A
+ * preview shows the page it opens on scheels.com.
+ */
+// The kind of link chosen for a hotspot, kept while its fields are still empty: an empty page link
+// would otherwise read as a products link.
+const chosenKinds = new WeakMap<Hotspot, LinkKind>();
+
+function renderFallback(hotspot: Hotspot) {
+  const ro = deps.readOnly();
+  const link: FallbackLink = hotspot.fallback;
+  const kind = chosenKinds.get(hotspot) ?? linkKind(link);
+  const group = el('div', { className: 'group' });
+  // Amplience's sandbox can stop a click from opening a tab; the browser's own "Open Link in New Tab" still works.
+  const preview = el('a', {
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    title: 'If clicking does not open it, right-click and choose Open Link in New Tab',
+  }) as HTMLAnchorElement;
+  let buttonText: HTMLInputElement | undefined;
+  const updatePreview = () => {
+    if (buttonText) buttonText.placeholder = defaultButtonText(toFallbackLink(link), hotspot.label);
+    const path = linkPath(toFallbackLink(link), hotspot.label);
+    preview.replaceChildren(path, el('span', { ariaHidden: 'true', textContent: ' ↗' }), el('span', { className: 'sr', textContent: ' (opens in a new tab)' }));
+    preview.href = isExternalUrl(path) ? path : SITE + path;
+  };
+  const edited = () => {
+    updatePreview();
+    changed(hotspot);
+  };
+  // The preview follows each keystroke; the field is written once the input is left (see typingInput).
+  const input = (value: string, placeholder: string, onInput: (v: string) => void, id?: string) =>
+    typingInput(value, placeholder, ro, hotspot, (v) => {
+      onInput(v.trim());
+      updatePreview();
+    }, id);
+  // A text field bound to one link property; an emptied field removes the property.
+  const linkField = (label: string, key: 'category' | 'searchTerm' | 'urlSlug' | 'pageID' | 'anchor', placeholder: string) =>
+    field(
+      label,
+      input(link[key] ?? '', placeholder, (v) => {
+        if (v) link[key] = v;
+        else delete link[key];
+      }),
+    );
+  const checkbox = (label: string, key: 'onSale' | 'newPage', checked: boolean) => {
+    const box = el('input', { type: 'checkbox', checked, disabled: ro }) as HTMLInputElement;
+    box.addEventListener('change', () => {
+      if (box.checked) link[key] = true;
+      else delete link[key];
+      edited();
+    });
+    return el('label', { className: 'check' }, box, el('span', { textContent: label }));
+  };
+
+  // Switching what the link opens clears the other kinds' fields: the site follows the first one set.
+  const kindSelect = el(
+    'select',
+    { disabled: ro },
+    ...LINK_KINDS.map(([value, label]) => el('option', { value, textContent: label, selected: value === kind })),
+  ) as HTMLSelectElement;
+  kindSelect.addEventListener('change', () => {
+    const next = kindSelect.value as LinkKind;
+    const keep = { newPage: link.newPage, clickID: link.clickID };
+    hotspot.fallback = Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined)) as FallbackLink;
+    chosenKinds.set(hotspot, next);
+    changed(hotspot);
+    renderInspector();
+  });
+  group.append(el('h4', { textContent: 'Link when no product' }), field('Link to', kindSelect));
+
+  if (kind === 'products') renderProductsLink(hotspot, link, group, input, checkbox, linkField);
+  else if (kind === 'url') {
+    group.append(
+      linkField('URL slug', 'urlSlug', 'e.g. /stores or https://www.youtube.com/watch?v=…'),
+      el('p', { className: 'muted', textContent: 'A path on scheels.com, like /stores, or a full URL to another site.' }),
+      linkField('Anchor (optional, scheels.com pages)', 'anchor', 'e.g. filter-results'),
+    );
+  } else {
+    group.append(linkField('Page ID', 'pageID', 'e.g. deals'), linkField('Anchor (optional)', 'anchor', ''));
+  }
+  if (kind !== 'products') group.append(checkbox('Open in a new tab', 'newPage', !!link.newPage));
+
+  // Placeholder: the text the site shows when this is left empty.
+  buttonText = typingInput(hotspot.buttonText ?? '', defaultButtonText(toFallbackLink(link), hotspot.label), ro, hotspot, (v) => {
+    const value = v.trim();
+    if (value) hotspot.buttonText = value;
+    else delete hotspot.buttonText;
+  });
+  buttonText.maxLength = 60;
+  group.append(field('Button text (optional)', buttonText));
+
+  updatePreview();
+  // Amplience's sandbox can block new tabs, so the link can also be copied and pasted into one.
+  const copy = el('button', { type: 'button', className: 'link', textContent: 'Copy link' });
+  const manual = el('input', { type: 'text', readOnly: true, className: 'copyfield', hidden: true }) as HTMLInputElement;
+  manual.setAttribute('aria-label', 'Link to copy');
+  copy.addEventListener('click', async () => {
+    if (await copyText(preview.href)) {
+      copy.textContent = 'Copied';
+      return;
+    }
+    // Copying is blocked too: show the full link selected, ready for Cmd/Ctrl + C.
+    manual.value = preview.href;
+    manual.hidden = false;
+    manual.focus();
+    manual.select();
+    copy.textContent = 'Press ⌘C / Ctrl+C to copy';
+  });
+  group.append(
+    el('p', { className: 'preview' }, el('span', { className: 'muted', textContent: 'Opens ' }), preview, ' ', copy),
+    manual,
+  );
+  return group;
+}
+
+const LINK_KINDS: [LinkKind, string][] = [
+  ['products', 'Products (category and filters)'],
+  ['content', 'Content page (page ID)'],
+  ['url', 'URL slug'],
+];
+
+/** The category, filter, on-sale and search-term fields of a link that lists products. */
+function renderProductsLink(
+  hotspot: Hotspot,
+  link: FallbackLink,
+  group: HTMLElement,
+  input: (value: string, placeholder: string, onInput: (v: string) => void, id?: string) => HTMLInputElement,
+  checkbox: (label: string, key: 'onSale' | 'newPage', checked: boolean) => HTMLElement,
+  linkField: (label: string, key: 'category' | 'searchTerm', placeholder: string) => HTMLElement,
+) {
+  const ro = deps.readOnly();
+  group.append(linkField('Category key', 'category', 'e.g. boots'));
+
+  const filters = el('div', { className: 'filters' });
+  const names = el('datalist', { id: 'edAttrNames' }, ...PATH_ATTRIBUTES.map((n) => el('option', { value: n })));
+  (link.attributes ?? []).forEach((attribute, i) => {
+    const name = input(attribute.attributeName, 'name', (v) => (attribute.attributeName = v), `edAttr${i}`);
+    name.setAttribute('list', 'edAttrNames');
+    name.setAttribute('aria-label', `Filter ${i + 1} name`);
+    const value = input(attribute.attributeValue, 'value', (v) => (attribute.attributeValue = v));
+    value.setAttribute('aria-label', `Filter ${i + 1} value`);
+    const remove = el('button', { type: 'button', className: 'link', textContent: 'Remove', disabled: ro });
+    remove.setAttribute('aria-label', `Remove filter ${i + 1}`);
+    remove.addEventListener('click', () => {
+      link.attributes?.splice(i, 1);
+      if (!link.attributes?.length) delete link.attributes;
+      changed(hotspot);
+      renderInspector();
+    });
+    filters.append(el('div', { className: 'filter' }, name, value, remove));
+  });
+  const add = el('button', { type: 'button', className: 'link', textContent: '+ Add filter', disabled: ro });
+  add.addEventListener('click', () => {
+    link.attributes = [...(link.attributes ?? []), { attributeName: link.attributes?.length ? '' : 'brand', attributeValue: '' }];
+    renderInspector();
+    $(`edAttr${link.attributes.length - 1}`)?.focus();
+  });
+  group.append(
+    el('span', { className: 'flabel', textContent: 'Filters (brand, gender, team, …)' }),
+    filters,
+    names,
+    add,
+    checkbox('On sale only', 'onSale', !!link.onSale),
+    linkField('Search term (used only with no category or filter)', 'searchTerm', hotspot.label),
+  );
+
+  // Category and brand from the products this hotspot links to, for when they go offline.
+  const linked = (hotspot.objectIds ?? []).map((id) => state.products.get(id)).filter((c) => !!c);
+  if (linked.length) {
+    const fill = el('button', { type: 'button', className: 'link', textContent: 'Fill in from linked products', disabled: ro });
+    fill.addEventListener('click', () => {
+      hotspot.fallback = fillFromProducts(toFallbackLink(link), linked);
+      changed(hotspot);
+      renderInspector();
+    });
+    group.append(fill);
+  }
+}
+
+/** A multi-line note shown under the price on the site, e.g. the terms of an offer. Written when left. */
+function descriptionInput(hotspot: Hotspot, readOnly: boolean) {
+  const area = el('textarea', {
+    value: hotspot.description ?? '',
+    rows: 3,
+    maxLength: 300,
+    placeholder: 'e.g. 20% off all blaze clothing. Excludes Sitka and First Lite.',
+    disabled: readOnly,
+  }) as HTMLTextAreaElement;
+  area.addEventListener('input', () => {
+    const value = area.value.trim();
+    if (value) hotspot.description = value;
+    else delete hotspot.description;
+    hotspot.locked = true;
+    setStatus('Editing…');
+  });
+  area.addEventListener('change', () => changed(hotspot, true));
+  return area;
+}
+
 function inStoreToggle(hotspot: Hotspot) {
   const box = el('input', { type: 'checkbox', checked: !!hotspot.inStoreOnly, disabled: deps.readOnly() }) as HTMLInputElement;
   box.addEventListener('change', () => {
@@ -257,26 +508,7 @@ function renderInspector() {
     return;
   }
   const ro = deps.readOnly();
-  const text = (value: string, onInput: (v: string) => void) => {
-    const input = el('input', { type: 'text', value, disabled: ro }) as HTMLInputElement;
-    input.addEventListener('input', () => {
-      onInput(input.value);
-      changed(hotspot);
-    });
-    return input;
-  };
-  const fallbackType = el(
-    'select',
-    { disabled: ro },
-    ...(['search', 'brand', 'category'] as const).map((t) =>
-      el('option', { value: t, textContent: t[0].toUpperCase() + t.slice(1), selected: hotspot.fallback.type === t }),
-    ),
-  ) as HTMLSelectElement;
-  fallbackType.addEventListener('change', () => {
-    hotspot.fallback.type = fallbackType.value as Hotspot['fallback']['type'];
-    changed(hotspot);
-  });
-
+  const text = (value: string, onInput: (v: string) => void) => typingInput(value, '', ro, hotspot, onInput);
   const back = el('button', { type: 'button', className: 'link back', textContent: '‹ All hotspots on this page' });
   back.addEventListener('click', () => select(-1));
   const details = el('div', { className: 'group' });
@@ -284,12 +516,7 @@ function renderInspector() {
     el('h4', { textContent: 'Details' }),
     field('Product name', text(hotspot.label, (v) => (hotspot.label = v))),
     field('Price as printed', text(hotspot.priceText, (v) => (hotspot.priceText = v))),
-    el(
-      'div',
-      { className: 'row' },
-      field('Link when no product', fallbackType),
-      field('Value', text(hotspot.fallback.value, (v) => (hotspot.fallback.value = v))),
-    ),
+    field('Description (optional)', descriptionInput(hotspot, ro)),
     inStoreToggle(hotspot),
   );
   const products = el('div', { className: 'group' }, el('h4', { textContent: 'Products' }));
@@ -297,10 +524,10 @@ function renderInspector() {
     products.append(el('ul', { className: 'linked' }, ...hotspot.skus.map((_, i) => productRow(hotspot, i))));
     loadProductNames(hotspot.objectIds ?? []);
   } else {
-    products.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its fallback link.' }));
+    products.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its link below.' }));
   }
   products.append(renderSearch(hotspot));
-  panel.append(back, el('h3', { textContent: `Hotspot ${state.selected + 1}` }), details, products);
+  panel.append(back, el('h3', { textContent: `Hotspot ${state.selected + 1}` }), details, products, renderFallback(hotspot));
 
   const del = el('button', {
     type: 'button',
@@ -406,6 +633,16 @@ function wirePointer() {
     if (boxEl) Object.assign(boxEl.style, { left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` });
   });
 
+  // A drag released outside the frame may never deliver pointerup; losing the capture ends it the same way.
+  const abandon = () => {
+    if (drag?.mode === 'draw') drag.draft.remove();
+    else if (drag?.moved) changed(hotspots()[drag.idx]);
+    if (drag) render();
+    drag = null;
+  };
+  sheet.addEventListener('pointercancel', abandon);
+  sheet.addEventListener('lostpointercapture', () => drag && abandon());
+
   sheet.addEventListener('pointerup', (ev) => {
     if (!drag) return;
     const current = drag;
@@ -424,7 +661,7 @@ function wirePointer() {
           box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) },
           skus: [],
           objectIds: [],
-          fallback: { type: 'search', value: '' },
+          fallback: {},
           locked: true,
           confidence: 'high',
         };
@@ -490,7 +727,12 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
   deps = editorDeps;
   state.pages = structuredClone(pages).map((page) => ({
     ...page,
-    hotspots: (page.hotspots ?? []).map((h) => ({ ...h, skus: h.skus ?? [], objectIds: h.objectIds ?? [] })),
+    hotspots: (page.hotspots ?? []).map((h) => ({
+      ...h,
+      skus: h.skus ?? [],
+      objectIds: h.objectIds ?? [],
+      fallback: toFallbackLink(h.fallback, h.label),
+    })),
   }));
   state.page = clamp(state.page, 0, Math.max(0, state.pages.length - 1));
   state.selected = -1;

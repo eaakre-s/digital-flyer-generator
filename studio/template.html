@@ -622,6 +622,8 @@ const PROMPT_RULES = `You turn one page of a printed SCHEELS sale flyer into sho
 A hotspot is the area a shopper taps for one advertised product or offer: its photo, name and price together. Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Editorial pages (articles, partner logos) have no hotspots.
 Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
 When an item list is given, set offerIds to the item-list ids whose brand and product clearly match the hotspot: a product id (like o3k9xa-7f2) when an item lists several products and the hotspot shows one of them, else the item id (like o3k9xa). Use several ids when one hotspot advertises several items. The vendor name can be closer to the printed brand than the brand column (SILENCER vs SilencerCo). Leave offerIds empty when unsure; never invent ids.
+priceText is the item's price line as printed. A tag like SALE, NEW or CLEARANCE with no amount is not a price: when the item prints no sale price because a banner or heading covers it ("20% off all blaze clothing"), put that offer first, e.g. "20% off · Reg. $139.99".
+description holds offer terms a shopper should know that the price line leaves out: the banner or heading offer that covers the item, exclusions, rebates, gifts with purchase, limits. Under 25 words, in plain sentences. Empty when the price line says it all.
 confidence is "high" only when the box is unambiguous (and, if an item list was given, the match is certain); otherwise "low" with a short note saying what to check.`;
 
 function buildPrompt(i, items, regions, rows, locked, withImage) {
@@ -635,7 +637,7 @@ function buildPrompt(i, items, regions, rows, locked, withImage) {
   if (rows.length) lines.push(`Advertised items for this page from the item list (id | brand | description | prices | SKUs | styles | notes):\n${rows.map(offerLine).join('\n')}`);
   if (locked.length) lines.push(`A person already placed these hotspots; do not output hotspots for these products or areas:\n${locked.map((h) => `- ${h.label} at x ${h.box.x}, y ${h.box.y}, w ${h.box.w}, h ${h.box.h}`).join('\n')}`);
   lines.push(`Reply with only JSON of this shape:
-{"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"offerIds":["o3k9xa"],"confidence":"high","note":""}]}
+{"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","description":"","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"offerIds":["o3k9xa"],"confidence":"high","note":""}]}
 Use {"hotspots":[]} when the page has no products. Dense pages can have 20 or more hotspots, so keep the reply compact: only these fields, notes under 15 words, empty strings rather than explanations.`);
   return lines.join('\n\n');
 }
@@ -671,15 +673,41 @@ function fromOffers(offers, label, printedBrand) {
   return { brand, skus, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
 }
 
+/** A sale cell as it reads on a price line: 111.99 → "Sale $111.99", 0.2 (a % cell) → "20% off", text as written. */
+function saleText(sale) {
+  const value = String(sale).trim().replace(/^\$/, '');
+  if (!/^[\d,]+(\.\d+)?$/.test(value)) return String(sale).trim();
+  const n = Number(value.replace(/,/g, ''));
+  return n > 0 && n < 1 ? `${Math.round(n * 100)}% off` : `Sale $${n.toFixed(2)}`;
+}
+
+/**
+ * A price line with no sale amount ("SALE · Reg. $139.99": the discount is printed elsewhere, often
+ * a page banner) gets the matched item-list entry's sale price or offer: "20% off · Reg. $139.99".
+ * Lines that already carry an amount are left as printed.
+ */
+function completePrice(priceText, entries) {
+  const text = String(priceText || '').trim();
+  const withoutRegular = text.replace(/reg(ular)?\.?\s*\$\s*[\d,.]+/gi, '');
+  if (/\$\s*\d|\d\s*%|\bfree\b/i.test(withoutRegular)) return text;
+  const priced = entries.flatMap((e) => [e, ...(e.products || [])]).find((e) => String(e.sale || '').trim());
+  if (!priced) return text;
+  const rest = text.replace(/\b(sale|new|clearance|hot buy)\b/gi, '').replace(/^[\s·|,-]+|[\s·|,-]+$/g, '');
+  const retail = String(priced.retail || '').trim().replace(/^\$/, '');
+  const regular = rest || (/^[\d,]+(\.\d+)?$/.test(retail) ? `Reg. $${Number(retail.replace(/,/g, '')).toFixed(2)}` : '');
+  return [saleText(priced.sale), regular].filter(Boolean).join(' · ');
+}
+
 function cleanHotspot(h, offersById) {
   const box = h?.box || {};
   const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
   const label = String(h?.label || '').trim();
   const offerIds = Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [];
-  const { brand, skus, styleIds, fallback, inStoreOnly, issues } = fromOffers(offerIds.map((id) => offersById.get(id)), label, String(h?.brand || '').trim());
+  const entries = offerIds.map((id) => offersById.get(id));
+  const { brand, skus, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
   return {
-    label, priceText: String(h?.priceText || '').trim(), brand,
+    label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
     offerIds, skus, objectIds: styleIds, fallback, inStoreOnly,
@@ -737,7 +765,7 @@ function linkToEntries(h, ids) {
   const index = offerIndex(state.offers);
   const entries = ids.map((id) => index.get(id)).filter(Boolean);
   const derived = fromOffers(entries, h.label, h.brand || '');
-  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, fallback: derived.fallback, inStoreOnly: derived.inStoreOnly, brand: derived.brand });
+  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, fallback: derived.fallback, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
 }
 
 const AUTO_MATCH_MIN = 1.0;   // shared words plus a price or model-number agreement
@@ -844,7 +872,8 @@ async function textInBox(i, box) {
 }
 
 const AREA_PROMPT = `You fill in one shoppable hotspot on a printed SCHEELS sale flyer. You get the text printed inside the hotspot's box (in reading order; prices can be split into pieces like "$" "3,999" "99") and the advertised items from the ad's item list that may be on this page.
-Reply with only JSON: {"label":"brand and product name as printed","priceText":"price line as printed, e.g. Now $2,199.97 · Reg. $3,499.97","brand":"printed brand","offerIds":["o3k9xa"],"note":""}
+Reply with only JSON: {"label":"brand and product name as printed","priceText":"price line as printed, e.g. Now $2,199.97 · Reg. $3,499.97","description":"","brand":"printed brand","offerIds":["o3k9xa"],"note":""}
+priceText: a tag like SALE with no amount is not a price; use the item list's sale price or offer instead when there is one. description: offer terms printed in the box that the price line leaves out (exclusions, rebates, gifts with purchase), under 25 words; empty when none.
 offerIds: every item-list id (or product id like o3k9xa-7f2) the box clearly advertises; several when one box shows several products; empty when unsure. Never invent ids. Put anything a reviewer should check in note.`;
 
 /**
@@ -865,6 +894,7 @@ async function fillFromArea(i, h) {
       const r = await sample.json(prompt, { modelTier: 'default' });
       h.label = String(r?.label || '').trim() || h.label;
       h.priceText = String(r?.priceText || '').trim() || h.priceText;
+      h.description = String(r?.description || '').trim() || h.description || '';
       h.brand = String(r?.brand || '').trim() || h.brand;
       h.note = String(r?.note || '').trim();
       const index = offerIndex(state.offers);
@@ -985,6 +1015,8 @@ function renderInspector() {
   label.addEventListener('change', () => edit((x) => { x.label = label.value.trim(); }));
   const price = el('input', { type: 'text', value: h.priceText, id: 'iPrice' });
   price.addEventListener('change', () => edit((x) => { x.priceText = price.value.trim(); }));
+  const description = el('textarea', { value: h.description || '', id: 'iDescription', rows: 2, maxLength: 300, placeholder: 'Offer terms the price leaves out, e.g. Excludes Sitka and First Lite.' });
+  description.addEventListener('change', () => edit((x) => { x.description = description.value.trim(); }));
   const skus = el('input', { type: 'text', value: h.skus.join(', '), id: 'iSkus', className: 'mono' });
   skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); }));
   const ftype = el('select', { id: 'iFtype' }, ...['search', 'brand', 'category'].map((t) => el('option', { value: t, textContent: t[0].toUpperCase() + t.slice(1), selected: h.fallback.type === t })));
@@ -1039,7 +1071,7 @@ function renderInspector() {
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
   body.append(
-    field('Product', label), field('Price as printed', price), field('SKUs (comma separated)', skus),
+    field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('SKUs (comma separated)', skus),
     el('label', { className: 'check' }, inStore, ' In store only (no online link)'),
     ...suggestionBlock(),
     ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${o.brand} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.objectIds?.length ? `. No SKU in the sheet; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
@@ -1195,7 +1227,10 @@ function flyerData() {
     pdfFile: state.file?.name || '',
     pages: state.pages.map((p, i) => ({
       imageName: imageName(d.campaign, i),
-      hotspots: p.hotspots.map((h) => ({ label: h.label, priceText: h.priceText, box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: h.fallback, inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: h.confidence })),
+      hotspots: p.hotspots.map((h) => ({
+        label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
+        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: h.fallback, inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: h.confidence,
+      })),
     })),
   };
 }

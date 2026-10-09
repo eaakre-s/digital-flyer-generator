@@ -1,5 +1,7 @@
 /** Shapes and pure logic for importing a Flyer Studio export into the Digital Flyer `pages` field. */
 
+import { toFallbackLink, type FallbackLink } from './link';
+
 export interface ImageLink {
   _meta: { schema: string };
   id: string;
@@ -15,7 +17,11 @@ export interface Hotspot {
   skus: string[];
   objectIds?: string[];
   inStoreOnly?: boolean;
-  fallback: { type: 'brand' | 'category' | 'search'; value: string };
+  /** Shown under the price in the site's product panel. */
+  description?: string;
+  /** Replaces the panel button's text. */
+  buttonText?: string;
+  fallback: FallbackLink;
   locked: boolean;
   confidence: 'high' | 'low';
 }
@@ -38,7 +44,6 @@ export interface FlyerPage {
   hotspots: Hotspot[];
 }
 
-const FALLBACK_TYPES = new Set(['brand', 'category', 'search']);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const round1 = (v: number) => Math.round(v * 10) / 10;
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
@@ -50,7 +55,6 @@ function cleanHotspot(raw: any): Hotspot {
   const box = raw?.box ?? {};
   const x = clamp(Number(box.x) || 0, 0, 100);
   const y = clamp(Number(box.y) || 0, 0, 100);
-  const fallbackType = FALLBACK_TYPES.has(raw?.fallback?.type) ? raw.fallback.type : 'search';
   return {
     label: text(raw?.label),
     priceText: text(raw?.priceText),
@@ -63,7 +67,9 @@ function cleanHotspot(raw: any): Hotspot {
     skus: Array.isArray(raw?.skus) ? raw.skus.map(text).filter(Boolean).map(normalizeSku) : [],
     objectIds: Array.isArray(raw?.objectIds) ? raw.objectIds.map(text).filter(Boolean) : [],
     inStoreOnly: raw?.inStoreOnly === true,
-    fallback: { type: fallbackType, value: text(raw?.fallback?.value) || text(raw?.label) },
+    ...(text(raw?.description) ? { description: text(raw?.description) } : {}),
+    ...(text(raw?.buttonText) ? { buttonText: text(raw?.buttonText) } : {}),
+    fallback: toFallbackLink(raw?.fallback, text(raw?.label)),
     locked: raw?.locked === true,
     confidence: raw?.confidence === 'high' ? 'high' : 'low',
   };

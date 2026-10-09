@@ -58,7 +58,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["label", "box", "fallback"],
+              "required": ["label", "box"],
               "properties": {
                 "label": { "title": "Product", "type": "string" },
                 "priceText": { "title": "Price as printed", "type": "string" },
@@ -85,13 +85,32 @@
                   "items": { "type": "string" }
                 },
                 "fallback": {
-                  "title": "Link when no SKU is online",
-                  "type": "object",
-                  "required": ["type", "value"],
-                  "properties": {
-                    "type": { "type": "string", "enum": ["brand", "category", "search"] },
-                    "value": { "type": "string" }
-                  }
+                  "title": "Link when no product",
+                  "allOf": [
+                    { "$ref": "https://scheels.com/partial/link#/definitions/link" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "searchTerm": {
+                          "title": "Search term",
+                          "description": "Used only when no category or attribute is set: links to search results for this term.",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "description": {
+                  "title": "Description",
+                  "description": "Shown under the price in the product panel, e.g. the terms of an offer.",
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "buttonText": {
+                  "title": "Button text",
+                  "description": "Replaces the panel button's text, which otherwise describes the link.",
+                  "type": "string",
+                  "maxLength": 60
                 },
                 "inStoreOnly": {
                   "title": "In store only",
@@ -107,6 +126,6 @@
       }
     }
   },
-  "required": ["title", "campaign", "startDate", "endDate", "pages"],
+  "required": ["pages"],
   "propertyOrder": ["title", "campaign", "startDate", "endDate", "disclaimer", "pdfUrl", "pages"]
 }

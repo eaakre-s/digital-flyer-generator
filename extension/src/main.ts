@@ -1,5 +1,6 @@
 import { init } from 'dc-extensions-sdk';
 import type { ContentFieldExtension } from 'dc-extensions-sdk';
+import { copyText } from './copy';
 import { devSdk } from './dev-sdk';
 import { buildPages, findImage, parseStudioExport, type FlyerPage, type ImageLink, type MediaSettings, type StudioFlyer } from './flyer';
 import { openEditor, refreshEditor } from './editor';
@@ -85,12 +86,9 @@ async function showDetails(flyer: StudioFlyer) {
     row.append(name, val, note);
     if (!matches) {
       const copy = Object.assign(document.createElement('button'), { type: 'button', className: 'link', textContent: 'Copy' });
-      copy.addEventListener('click', () =>
-        navigator.clipboard?.writeText(value).then(
-          () => (copy.textContent = 'Copied'),
-          () => (copy.textContent = 'Select and copy it'),
-        ),
-      );
+      copy.addEventListener('click', async () => {
+        copy.textContent = (await copyText(value)) ? 'Copied' : 'Select and copy it';
+      });
       row.append(copy);
     }
     list.append(row);
@@ -235,8 +233,8 @@ async function apply() {
     const missing = state.images.filter((image) => !image).length;
     setMessage(
       missing
-        ? `Imported ${state.flyer.pages.length} pages; ${missing} without an image yet. Save the item to keep them.`
-        : `Imported ${state.flyer.pages.length} pages. Save the item to keep them.`,
+        ? `Imported ${state.flyer.pages.length} pages; ${missing} without an image yet. Click Save at the top of Amplience to keep them.`
+        : `Imported ${state.flyer.pages.length} pages. Click Save at the top of Amplience to keep them.`,
       'ok',
     );
     await showCurrent();

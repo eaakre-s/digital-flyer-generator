@@ -1,5 +1,6 @@
 import { decide, fetchProducts, findBySkus, searchBatch, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
-import type { StudioFlyer } from './flyer';
+import type { Hotspot, StudioFlyer } from './flyer';
+import { fillFromProducts, linkPath } from './link';
 
 /** One Match per hotspot, indexed [page][hotspot]. */
 export type Matches = Match[][];
@@ -43,15 +44,28 @@ export async function matchProducts(flyer: StudioFlyer, onProgress: (done: numbe
   );
 }
 
-/** The flyer with each hotspot's products applied: objectIDs for item-list SKUs, SKUs and objectIDs for name matches. */
+/** The products a hotspot's fallback link is filled from: the ticked ones, or else everything found for it. */
+const linkSource = (match: Match) => {
+  const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
+  return chosen.length ? chosen : match.candidates;
+};
+
+/** The hotspot's fallback link with the category and brand Scheels Search found filled in where empty. */
+export const filledFallback = (hotspot: Hotspot, match: Match) => fillFromProducts(hotspot.fallback, linkSource(match));
+
+/**
+ * The flyer with each hotspot's products applied: objectIDs for item-list SKUs, SKUs and objectIDs for name
+ * matches, and the fallback link filled in from the products found.
+ */
 export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlyer {
   return {
     ...flyer,
     pages: flyer.pages.map((page, p) => ({
       ...page,
-      hotspots: page.hotspots.map((h, i) => {
+      hotspots: page.hotspots.map((hotspot, i) => {
         const match = matches[p]?.[i];
-        if (!match || match.status === 'instore') return h;
+        if (!match || match.status === 'instore') return hotspot;
+        const h = { ...hotspot, fallback: filledFallback(hotspot, match) };
         // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
         if (match.status === 'offline' && !chosen.length) return { ...h, objectIds: [] };
@@ -246,12 +260,17 @@ export function renderProducts(
           el('p', {
             className: 'muted',
             textContent: hotspot.skus.length
-              ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. It uses its fallback link until they are.`
-              : 'Its item-list style was not found on scheels.com. It uses its fallback link; search Scheels below if it is online.',
+              ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. Until they are, it links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`
+              : `Its item-list style was not found on scheels.com. It links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}; search Scheels below if it is online.`,
           }),
         );
       } else if (match.status === 'none' && !showCandidates) {
-        row.append(el('p', { className: 'muted', textContent: 'Scheels Search found nothing. This hotspot uses its search link.' }));
+        row.append(
+          el('p', {
+            className: 'muted',
+            textContent: `Scheels Search found nothing. This hotspot links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`,
+          }),
+        );
       } else {
         const list = el('ul', { className: 'cands' });
         match.candidates.forEach((candidate) => {
@@ -274,7 +293,12 @@ export function renderProducts(
         if (match.candidates.length > SELECT_ALL_FROM) row.append(selectAll(match, `${p}-${i}`, options.readOnly, options.onChange));
         row.append(list);
         if (!match.chosen.length) {
-          row.append(el('p', { className: 'muted', textContent: 'Nothing ticked: this hotspot uses its search link.' }));
+          row.append(
+            el('p', {
+              className: 'muted',
+              textContent: `Nothing ticked: this hotspot links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`,
+            }),
+          );
         }
       }
       if (match.status !== 'instore') {
