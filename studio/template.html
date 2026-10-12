@@ -104,6 +104,8 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .export{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px}
 .export p{margin:0;font-size:13px;color:var(--ink-2)}
+.export .exportwhy{color:var(--warn)}
+.export .exportwhy:empty{display:none}
 .summary{font-size:13px;color:var(--ink-2)}
 .linkbtn{border:0;background:none;padding:0;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
 .guide{border:1px solid var(--line);border-radius:10px;padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--panel);color:var(--ink);box-shadow:0 24px 60px var(--shadow)}
@@ -188,6 +190,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       <div class="right">
         <button class="btn" id="genPageBtn" type="button" disabled>Generate this page</button>
         <button class="btn" id="matchBtn" type="button" disabled>Match from item list</button>
+        <button class="btn" id="tidyBtn" type="button" title="Give boxes in the same row or column the same edges and size">Line up boxes</button>
         <button class="btn" id="drawBtn" type="button" aria-pressed="false">Draw box</button>
       </div>
     </div>
@@ -208,6 +211,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
     <div class="export">
       <button class="btn primary" id="exportBtn" type="button" disabled>Save images + flyer data (.zip)</button>
       <button class="btn" id="exportJsonBtn" type="button" disabled>Save flyer data only (.json)</button>
+      <p class="exportwhy" id="exportWhy" role="status"></p>
       <p>Upload the images to ECOM Creative › Content Pages › Digital Flyers, then import the flyer data in the Digital Flyer item.</p>
     </div>
   </aside>
@@ -355,7 +359,10 @@ function writeDetails(d) {
   if (!d) return;
   $('fTitle').value = d.title || ''; $('fCampaign').value = d.campaign || ''; $('fStart').value = d.startDate || ''; $('fEnd').value = d.endDate || '';
 }
-['fTitle', 'fCampaign', 'fStart', 'fEnd'].forEach((id) => $(id).addEventListener('change', () => { persist(); updateExport(); }));
+['fTitle', 'fCampaign', 'fStart', 'fEnd'].forEach((id) => {
+  $(id).addEventListener('change', () => { persist(); updateExport(); });
+  $(id).addEventListener('input', updateExport);
+});
 
 // ---------- status ----------
 function setStatus(text, isError = false) { const s = $('status'); s.textContent = text; s.classList.toggle('err', isError); }
@@ -910,7 +917,8 @@ async function ensurePreview(i) {
 // ---------- generation ----------
 const PROMPT_RULES = `You turn one page of a printed SCHEELS catalog into shoppable hotspots. It may be a sale flyer (products with prices and offers) or a lookbook or gift guide (products shown in lifestyle photos, often with no prices).
 A hotspot is the area a shopper taps for one product or offer: its photo together with its name and price when they are printed. Make a hotspot for every product a shopper could identify and buy, even when no price is printed. In a lifestyle scene with several products, give each product its own box around it; when products are named in numbered callouts or a product list, use those names and box each product (and its callout). Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Only pages with no shoppable products (articles, partner logos, a cover with no products) have no hotspots.
-Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
+Coordinates are percentages of the page (0-100), origin top-left. Use the text item positions as anchors and extend each box to cover the product photo. Boxes should not overlap.
+Keep the boxes tidy: products laid out in a row or grid get boxes of the same width and height whose edges line up (same top for a row, same left for a column, the same gaps between them), following the layout's own panels or columns. Only break the pattern where the layout does: product photos that overlap, cut-outs that spill across panels, or lifestyle scenes. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
 When an item list is given, set offerIds to the item-list ids whose brand and product clearly match the hotspot: a product id (like o3k9xa-7f2) when an item lists several products and the hotspot shows one of them, else the item id (like o3k9xa). Use several ids when one hotspot advertises several items. The vendor name can be closer to the printed brand than the brand column (SILENCER vs SilencerCo). Leave offerIds empty when unsure; never invent ids.
 priceText is the item's price line as printed, or empty when the page prints no price for it; never make a price up. A tag like SALE, NEW or CLEARANCE with no amount is not a price: when the item prints no sale price because a banner or heading covers it ("20% off all blaze clothing"), put that offer first, e.g. "20% off · Reg. $139.99".
 description holds offer terms a shopper should know that the price line leaves out: the banner or heading offer that covers the item, exclusions, rebates, gifts with purchase, limits. Under 25 words, in plain sentences. Empty when the price line says it all.
@@ -990,6 +998,78 @@ function completePrice(priceText, entries) {
   const retail = String(priced.retail || '').trim().replace(/^\$/, '');
   const regular = rest || (/^[\d,]+(\.\d+)?$/.test(retail) ? `Reg. $${Number(retail.replace(/,/g, '')).toFixed(2)}` : '');
   return [saleText(priced.sale), regular].filter(Boolean).join(' · ');
+}
+
+// ---------- tidying boxes ----------
+// Claude places boxes from text positions, so a row of products comes back nearly but not quite
+// aligned. Passes line up tops, left edges, bottoms and right edges that are within TIDY_ALIGN % of the
+// page; in a row or column, sizes within TIDY_SIZE % are made equal, the largest when it fits. A change
+// is undone for a box that then overlaps a box it did not overlap before, or no longer covers printed
+// text whose centre was inside it.
+const TIDY_ALIGN = 2;
+const TIDY_SIZE = 3;
+const median = (values) => { const v = [...values].sort((a, b) => a - b); return v[Math.floor((v.length - 1) / 2)]; };
+
+/** Groups items whose value is within `tolerance` of their group's first (smallest) one, so groups don't chain. */
+function clusterBy(items, value, tolerance) {
+  const sorted = [...items].sort((a, b) => value(a) - value(b));
+  const groups = [];
+  for (const item of sorted) {
+    const group = groups[groups.length - 1];
+    if (group && value(item) - value(group[0]) <= tolerance) group.push(item);
+    else groups.push([item]);
+  }
+  return groups.filter((g) => g.length > 1);
+}
+
+// Each edge lines up on the outermost one in its group (the highest top, the lowest bottom, …), so
+// lining up only ever grows a box. Equal heights in a row and equal widths in a column follow from
+// lining up both edges; a row's widths are evened out separately (the `sizes` step).
+const EDGES = {
+  top: { at: (b) => b.y, target: Math.min, set: (b, v) => { b.h += b.y - v; b.y = v; }, sizes: ['w'] },
+  left: { at: (b) => b.x, target: Math.min, set: (b, v) => { b.w += b.x - v; b.x = v; }, sizes: [] },
+  bottom: { at: (b) => b.y + b.h, target: Math.max, set: (b, v) => { b.h = v - b.y; }, sizes: [] },
+  right: { at: (b) => b.x + b.w, target: Math.max, set: (b, v) => { b.w = v - b.x; }, sizes: [] },
+};
+
+function tidyBoxes(boxes, fixed = [], items = []) {
+  if (boxes.length < 2) return;
+  const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const centreIn = (t, b) => t.x + t.w / 2 >= b.x && t.x + t.w / 2 <= b.x + b.w && t.y + t.h / 2 >= b.y && t.y + t.h / 2 <= b.y + b.h;
+  // Same 1 % slack as problemsFor's "does not cover all of its printed text" check.
+  const covers = (b, t) => t.x >= b.x - 1 && t.y >= b.y - 1 && t.x + t.w <= b.x + b.w + 1 && t.y + t.h <= b.y + b.h + 1;
+  const original = boxes.map((b) => ({ ...b }));
+  const ownText = original.map((b) => items.filter((t) => centreIn(t, b)));
+  const snapshot = () => boxes.map((b) => ({ ...b }));
+  // Rounds each box to the page, then puts back any box that now overlaps one it did not overlap
+  // originally, or stops covering its own text.
+  const settle = (before) => boxes.forEach((b, i) => {
+    Object.assign(b, { x: round1(clamp(b.x, 0, 100)), y: round1(clamp(b.y, 0, 100)) });
+    Object.assign(b, { w: round1(clamp(b.w, 1, 100 - b.x)), h: round1(clamp(b.h, 1, 100 - b.y)) });
+    const clash = boxes.some((o, j) => j !== i && overlaps(b, o) && !overlaps(original[i], original[j]))
+      || fixed.some((o) => overlaps(b, o) && !overlaps(original[i], o))
+      || ownText[i].some((t) => !covers(b, t));
+    if (clash) Object.assign(b, before[i]);
+  });
+  for (const edge of Object.values(EDGES)) {
+    const groups = clusterBy(boxes, edge.at, TIDY_ALIGN);
+    let before = snapshot();
+    groups.forEach((group) => { const at = edge.target(...group.map(edge.at)); group.forEach((b) => edge.set(b, at)); });
+    settle(before);
+    // Equal sizes: the largest when it fits, else the middle one; a box that fits neither keeps its own.
+    for (const key of edge.sizes) {
+      for (const group of groups) {
+        const sizes = group.map((b) => b[key]);
+        if (Math.max(...sizes) - Math.min(...sizes) > TIDY_SIZE) continue;
+        for (const size of [Math.max(...sizes), median(sizes)]) {
+          before = snapshot();
+          group.forEach((b) => { b[key] = size; });
+          settle(before);
+          if (group.every((b) => b[key] === round1(size))) break;
+        }
+      }
+    }
+  }
 }
 
 function cleanHotspot(h, offersById) {
@@ -1093,6 +1173,7 @@ async function generatePage(i, signal) {
     const result = await sample.json(buildPrompt(i, items, regions, offers, locked, withImage), options);
     const offersById = offerIndex(state.offers);
     const fresh = (Array.isArray(result?.hotspots) ? result.hotspots : []).map((h) => cleanHotspot(h, offersById)).filter((h) => h.label);
+    tidyBoxes(fresh.map((h) => h.box), locked.map((h) => h.box), items);
     p.hotspots = [...locked, ...fresh];
     p.status = 'done';
     if (i === state.current) { state.selected = -1; state.multi = new Set(); }
@@ -1453,6 +1534,7 @@ function updateButtons() {
   $('genBtn').disabled = !ready || state.busy;
   $('genPageBtn').disabled = !ready || state.busy;
   $('matchBtn').disabled = state.example || state.busy || !state.offers.length || !sheet.confirmed;
+  $('tidyBtn').disabled = state.example || state.busy;
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
   $('drawBtn').setAttribute('aria-pressed', String(state.drawing));
@@ -1538,15 +1620,31 @@ sheetEl.addEventListener('keydown', (ev) => {
   h.locked = true; state.selected = idx; persist(); renderStage();
   sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus();
 });
+$('tidyBtn').addEventListener('click', () => {
+  const p = currentPage();
+  if (state.example || !p?.hotspots.length) return;
+  const before = JSON.stringify(p.hotspots.map((h) => h.box));
+  tidyBoxes(p.hotspots.map((h) => h.box), [], p.items || []);
+  const changed = p.hotspots.filter((h, i) => JSON.stringify(h.box) !== JSON.stringify(JSON.parse(before)[i]));
+  changed.forEach((h) => { h.locked = true; });
+  persist(); renderStage(); renderRail();
+  setStatus(changed.length ? `Lined up ${changed.length} box${changed.length === 1 ? '' : 'es'}.` : 'The boxes on this page already line up.');
+});
 $('drawBtn').addEventListener('click', () => { state.drawing = !state.drawing; updateButtons(); renderStage(); });
 
 // ---------- export ----------
 function updateExport() {
   const d = readDetails();
-  const ok = !state.example && !!downloads && state.pages.some((p) => p.status === 'done') && /^[a-z0-9_-]+$/.test(d.campaign);
-  $('exportBtn').disabled = !ok || state.busy;
-  $('exportJsonBtn').disabled = !ok || state.busy;
-  $('exportBtn').title = ok ? '' : 'Open a PDF, generate at least one page and fill in the campaign code first.';
+  // The first thing still missing before the flyer can be saved, said under the buttons.
+  const why = state.example ? 'Open a flyer PDF to save it.'
+    : !downloads ? 'Saving files isn\u2019t allowed in this view. Allow downloads for Flyer Studio (its permissions menu), or open it on claude.ai.'
+    : !state.pages.some((p) => p.status === 'done') ? 'Generate a page, or draw a box on one, before saving.'
+    : !d.campaign ? 'Fill in the campaign code (top of the page) to save.'
+    : !/^[a-z0-9_-]+$/.test(d.campaign) ? `The campaign code can only use lowercase letters, numbers, - and _ (no spaces): "${d.campaign}" won\u2019t work.`
+    : '';
+  $('exportBtn').disabled = !!why || state.busy;
+  $('exportJsonBtn').disabled = !!why || state.busy;
+  $('exportWhy').textContent = state.busy ? '' : why;
 }
 // Sale dates are set in Central time; its UTC offset depends on daylight saving.
 function centralOffset(day) {
