@@ -82,7 +82,11 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 .hs .n{position:absolute;left:0;top:0;background:var(--ok);color:#fff;font:700 12px/1 var(--body);padding:3px 5px;border-radius:0 0 3px 0}
 .hs.low .n{background:var(--warn)}.hs.problem .n{background:var(--bad)}
 .hs[aria-pressed="true"]{outline:3px solid var(--focus);outline-offset:1px;z-index:2}
-.hs .grip{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--focus);border:2px solid #fff;border-radius:2px;cursor:nwse-resize;display:none}
+.hs .grip{position:absolute;width:14px;height:14px;background:var(--focus);border:2px solid #fff;border-radius:2px;display:none}
+.hs .grip.nw{left:-6px;top:-6px;cursor:nwse-resize}.hs .grip.ne{right:-6px;top:-6px;cursor:nesw-resize}
+.hs .grip.sw{left:-6px;bottom:-6px;cursor:nesw-resize}.hs .grip.se{right:-6px;bottom:-6px;cursor:nwse-resize}
+.hsdel{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:var(--bad);color:#fff;font:700 16px/1 var(--body);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;z-index:3;box-shadow:0 1px 4px var(--shadow)}
+.hsdel:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .hs[aria-pressed="true"] .grip{display:block}
 .hs.multi .grip{display:none!important}
 .inspector .picked{margin:0;padding-left:18px;font-size:14px}
@@ -102,10 +106,21 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 label.check{display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600}
 label.check input{width:16px;height:16px;accent-color:var(--red)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.attr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;align-items:center}
+.attr input{width:100%;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-size:14px}
+.sheetnote.err{color:var(--bad)}
 .export{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px}
 .export p{margin:0;font-size:13px;color:var(--ink-2)}
 .export .exportwhy{color:var(--warn)}
 .export .exportwhy:empty{display:none}
+dialog.saving{border:0;border-radius:12px;padding:30px 32px 26px;width:min(440px,calc(100vw - 32px));background:var(--panel);color:var(--ink);box-shadow:0 24px 60px var(--shadow);text-align:center}
+dialog.saving::backdrop{background:rgba(0,0,0,.6)}
+dialog.saving h2{font:800 26px/1.1 var(--display);text-transform:uppercase;margin:0 0 8px}
+dialog.saving p{margin:0;font-size:15px}
+dialog.saving .hint{margin-top:12px;font-size:13px;color:var(--ink-2)}
+dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(--red)}
+.spin{display:block;width:48px;height:48px;margin:0 auto 18px;border:5px solid var(--red);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .summary{font-size:13px;color:var(--ink-2)}
 .linkbtn{border:0;background:none;padding:0;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
 .guide{border:1px solid var(--line);border-radius:10px;padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--panel);color:var(--ink);box-shadow:0 24px 60px var(--shadow)}
@@ -140,7 +155,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)}aside.inspector{grid-column:1/-1}}
 @media (max-width:760px){.app{grid-template-columns:minmax(0,1fr)}.details{grid-template-columns:1fr 1fr}.pagelist{max-height:220px}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}.spin{animation:none;border-right-color:var(--red);opacity:.5}}
 </style>
 
 <div class="app">
@@ -154,6 +169,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
       <button class="btn" id="sheetCols" type="button" aria-haspopup="dialog" hidden>Columns</button>
+      <button class="btn" id="adBtn" type="button" aria-haspopup="dialog" hidden>Load AS400 ad</button>
       <button class="btn" id="resetBtn" type="button" aria-haspopup="dialog">Start over</button>
     </div>
   </header>
@@ -190,6 +206,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       <div class="right">
         <button class="btn" id="genPageBtn" type="button" disabled>Generate this page</button>
         <button class="btn" id="matchBtn" type="button" disabled>Match from item list</button>
+        <button class="btn" id="lookupBtn" type="button" title="Look up this page's boxes without SKUs in the AS400 SKU file" hidden>Find in AS400</button>
         <button class="btn" id="tidyBtn" type="button" title="Give boxes in the same row or column the same edges and size">Line up boxes</button>
         <button class="btn" id="drawBtn" type="button" aria-pressed="false">Draw box</button>
       </div>
@@ -232,6 +249,37 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
   </div>
 </dialog>
 
+<dialog class="saving" id="savingDlg" aria-labelledby="savingTitle" aria-describedby="savingText">
+  <span class="spin" aria-hidden="true"></span>
+  <h2 id="savingTitle">Saving</h2>
+  <p id="savingText" role="status"></p>
+  <progress id="savingBar" max="1" value="0" aria-label="Saving progress" hidden></progress>
+  <p class="hint">Keep this tab open until it finishes.</p>
+</dialog>
+
+<dialog class="guide colmap" id="addlg" aria-labelledby="adTitle">
+  <div class="guidehead">
+    <h2 id="adTitle">Load an AS400 ad</h2>
+    <button class="btn" id="adClose" type="button">Close</button>
+  </div>
+  <form class="guidebody" id="adForm">
+    <p class="lead">Reads the ad’s items, prices, pages and SKUs from the AS400 through your Claude IBMi Developer Tools connector, in place of an item list file. Enter several ad numbers when one flyer covers more than one ad, as Black Friday’s ad boards do.</p>
+    <label class="f">Ad numbers<input id="adNumbers" class="mono" type="text" inputmode="numeric" autocomplete="off" placeholder="7051, 7052" aria-describedby="adStatus"></label>
+    <label class="check" id="adKeepWrap" hidden><input type="checkbox" id="adKeep"> <span>Also keep the items from <span id="adKeepName"></span></span></label>
+    <p class="sheetnote" id="adStatus" role="status"></p>
+    <div class="actions">
+      <button class="btn primary" id="adLoad" type="submit">Load ad</button>
+    </div>
+  </form>
+</dialog>
+
+<datalist id="linkAttrNames">
+  <option value="brand"></option><option value="gender"></option><option value="vendorCollection"></option><option value="team"></option>
+  <option value="promotion"></option><option value="collection"></option><option value="refinementColor"></option><option value="size"></option>
+  <option value="caliber"></option><option value="gauge"></option><option value="camoPattern"></option><option value="promotionalsale"></option>
+  <option value="pmin"></option><option value="pmax"></option><option value="srule"></option>
+</datalist>
+
 <dialog class="guide colmap" id="colmap" aria-labelledby="colmapTitle">
   <div class="guidehead">
     <h2 id="colmapTitle">Item list columns</h2>
@@ -273,7 +321,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
     <ol class="steps">
       <li>
         <h3>Start the flyer</h3>
-        <p>Get the final flyer PDF from Creative, and the ad's item list (the marketing status sheet, as .xlsx or .csv) if there is one: Flyer Studio reads its Page, Brand, SKU, Style and In Store Only columns, so hotspots get exact SKUs. Click <b>Open flyer PDF</b>, then <b>Item list</b>. Flyer Studio finds the columns it needs by name; when it can't, it shows the <b>Item list columns</b> window, where Claude suggests them and asks about anything unclear, and Generate stays off until you confirm them. <b>Columns</b> reopens it. Fill in the title, the sale dates and a <b>campaign code</b>: lowercase letters and numbers, like <code>biggame26</code>. The campaign code names the page images and tags the flyer's analytics, so keep it the same from here to Amplience.</p>
+        <p>Get the final flyer PDF from Creative, and the ad's item list (the marketing status sheet, as .xlsx or .csv) if there is one: Flyer Studio reads its Page, Brand, SKU, Style and In Store Only columns, so hotspots get exact SKUs. Click <b>Open flyer PDF</b>, then <b>Item list</b>. Flyer Studio finds the columns it needs by name; when it can't, it shows the <b>Item list columns</b> window, where Claude suggests them and asks about anything unclear, and Generate stays off until you confirm them. <b>Columns</b> reopens it. With the Claude IBMi Developer Tools connector you can skip the sheet: <b>Load AS400 ad</b> reads the ad's items, prices, pages and SKUs straight from the AS400 (several ad numbers for a flyer that covers more than one ad). An ad set up early may not have its SKUs yet; load it again later to pick them up. Fill in the title, the sale dates and a <b>campaign code</b>: lowercase letters and numbers, like <code>biggame26</code>. The campaign code names the page images and tags the flyer's analytics, so keep it the same from here to Amplience.</p>
       </li>
       <li>
         <h3>Generate the hotspots</h3>
@@ -281,7 +329,7 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
       </li>
       <li>
         <h3>Check every page</h3>
-        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag its corner to resize it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
+        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag any corner to resize it, click its <b>×</b> (or press Delete) to remove it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
       </li>
       <li>
         <h3>Save the files</h3>
@@ -574,21 +622,27 @@ function rowsAsOffers(rows) {
 // An uploaded sheet: every tab's rows, and the tab / header row / columns it is read with. Generate
 // stays off until the columns are confirmed: found by name, remembered from an earlier sheet with
 // the same headers, or chosen in the column dialog (where Claude can suggest them and ask questions).
-const sheet = { name: '', tabs: {}, tab: '', header: null, confirmed: true, chat: [] };
+// `source` is 'file' for an uploaded sheet, 'as400' for offers read from AS400 ads (see loadAds).
+const sheet = { name: '', source: '', tabs: {}, tab: '', header: null, confirmed: true, chat: [] };
 const LAYOUTS_KEY = 'flyer-studio:sheet-layouts';
 const layoutKey = (cells) => cells.map((c) => String(c).trim().toLowerCase()).join('|');
 const savedLayouts = () => { try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY) || '{}'); } catch { return {}; } };
 const colLetter = (i) => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26));
 
+/** Re-links hotspots to the item list now in state.offers and shows it in the header. Returns its SKU count. */
+function showItemList() {
+  if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
+  const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
+  $('sheetName').textContent = !sheet.name ? 'None' : sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
+  $('sheetCols').hidden = sheet.source !== 'file';
+  updateButtons();
+  return skuCount;
+}
+
 function applySheet() {
   const rows = sheet.tabs[sheet.tab] || [];
   state.offers = sheet.header ? parseOffers(rows, sheet.header) || [] : rowsAsOffers(rows.slice());
-  if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
-  const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
-  $('sheetName').textContent = sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
-  $('sheetCols').hidden = !sheet.name;
-  updateButtons();
-  return { skuCount, issues: state.offers.filter((o) => o.issues.length).length };
+  return { skuCount: showItemList(), issues: state.offers.filter((o) => o.issues.length).length };
 }
 
 $('sheetInput').addEventListener('change', async (ev) => {
@@ -597,7 +651,8 @@ $('sheetInput').addEventListener('change', async (ev) => {
   try {
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
     sheet.name = file.name;
-    sheet.tabs = Object.fromEntries(wb.SheetNames.map((n) => [n, XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })]));
+    sheet.source = 'file';
+    sheet.tabs =Object.fromEntries(wb.SheetNames.map((n) => [n, XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })]));
     sheet.chat = [];
     // The tab whose header names the most known columns.
     const found = wb.SheetNames.map((tab) => ({ tab, header: findHeader(sheet.tabs[tab]) }))
@@ -619,7 +674,7 @@ $('sheetInput').addEventListener('change', async (ev) => {
       openColumnDialog(true);
     }
   } catch (e) {
-    state.offers = []; sheet.name = ''; sheet.confirmed = true; $('sheetName').textContent = 'None'; updateButtons();
+    state.offers = []; Object.assign(sheet, { name: '', source: '', confirmed: true }); showItemList();
     setStatus('That item list could not be read. Save it as .xlsx or .csv.', true);
   }
 });
@@ -657,7 +712,7 @@ function renderColumnDialog() {
   const preview = sheet.header ? (parseOffers(rows, sheet.header) || []).filter((o) => o.desc || o.brand).slice(0, 6) : [];
   $('cmPreview').replaceChildren(preview.length
     ? el('table', {}, el('thead', {}, el('tr', {}, ...['Brand', 'Description', 'Pages', 'SKUs', 'Price'].map((h) => el('th', { textContent: h })))),
-      el('tbody', {}, ...preview.map((o) => el('tr', {}, ...[o.brand, o.desc, o.pages.join(', '), String(o.skus.length), [o.retail && `reg ${o.retail}`, o.sale && `sale ${o.sale}`].filter(Boolean).join(', ')].map((v) => el('td', { textContent: v || '—' }))))))
+      el('tbody', {}, ...preview.map((o) => el('tr', {}, ...[o.brand, o.desc, o.pages.join(', '), String(o.skus.length), priceNote(o)].map((v) => el('td', { textContent: v || '—' }))))))
     : el('span', { textContent: 'No items read yet with these columns.' }));
   $('cmUse').disabled = !columnsComplete(header.cols);
   // Claude's suggestions and questions.
@@ -693,11 +748,9 @@ $('cmUse').addEventListener('click', () => {
   setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list. These columns are remembered for sheets laid out the same way.`);
 });
 $('cmSkip').addEventListener('click', () => {
-  state.offers = []; sheet.name = ''; sheet.confirmed = true; sheet.header = null;
-  $('sheetName').textContent = 'None';
-  $('sheetCols').hidden = true;
+  state.offers = []; Object.assign(sheet, { name: '', source: '', confirmed: true, header: null });
   $('colmap').close();
-  updateButtons();
+  showItemList();
   setStatus('Not using an item list. Hotspots get their links from the printed names.');
 });
 $('colmapClose').addEventListener('click', () => $('colmap').close());
@@ -720,6 +773,378 @@ $('resetBtn').addEventListener('click', () => {
 $('resetClose').addEventListener('click', () => $('reset').close());
 $('resetFlyer').addEventListener('click', () => clearSaved(false));
 $('resetAll').addEventListener('click', () => clearSaved(true));
+
+// ---------- AS400 ad ----------
+// The item list read straight from the AS400 through the viewer's IBM i connector (SELECT only).
+// ADITEM has one line per advertised item: its description (department number first), ad price,
+// % off or $ off, and page. ADSKU lists each item's SKUs; its type T rows are the promo's target,
+// the gift card or gift that comes free with the item, not products of it. SKUFILE and VENDMAIN
+// give each SKU's vendor, style, description and retail; ADMAST the ad's name, ADSTORL its run dates.
+const IBMI = 'Claude IBMi Developer Tools';
+const MAX_ADS = 10;
+// An item with more distinct products than this is a whole-range offer ("all blaze clothing", "ammo up to
+// $39.99"): its SKUs are not listed. A product is a SKU description up to its first hyphen, so one jacket
+// in 30 colour styles counts once.
+const MAX_AD_PRODUCTS = 30;
+const AD_PRODUCT = `SUBSTR(RTRIM(s.SKUDESC1), 1, LOCATE('-', RTRIM(s.SKUDESC1) CONCAT '-') - 1)`;
+const ADS_KEY = 'flyer-studio:ads';
+let mcp = null;
+
+// Ad numbers reach the SQL only as integers checked by parseAdNumbers.
+const adItems = (ad) => `SELECT ITM03 FROM "ITM.DATA".ADITEM WHERE "AD#03" = ${ad}`;
+const AD_SQL = {
+  header: (ads) => `SELECT m."AD#01" AS AD, RTRIM(m.ADSC01) AS NAME,
+    (SELECT MIN(s.ONDT02) FROM "ITM.DATA".ADSTORL s WHERE s."AD#02" = m."AD#01" AND s.ONDT02 > 0) AS ONDT,
+    (SELECT MAX(s.OFDT02) FROM "ITM.DATA".ADSTORL s WHERE s."AD#02" = m."AD#01" AND s.OFDT02 > 0) AS OFDT
+    FROM "ITM.DATA".ADMAST m WHERE m."AD#01" IN (${ads.join(', ')})`,
+  lines: (ad) => `SELECT ITM03 AS ITEM, RTRIM(DSC03) AS DSC, FAMT03 AS AMT, PCT03 AS PCT, DOL03 AS DOL, PAG03 AS PAGE
+    FROM "ITM.DATA".ADITEM WHERE "AD#03" = ${ad} ORDER BY PAG03, ITM03`,
+  // One row per item, vendor and style, with its SKUs, for items with at most MAX_AD_PRODUCTS products.
+  styles: (ad) => `WITH g AS (SELECT a.ITM04 AS ITEM, RTRIM(s."VEND#1") AS VEND, RTRIM(s.STYLE) AS STYLE,
+      MIN(${AD_PRODUCT}) AS PRODUCT, MIN(RTRIM(v.VENDNAME)) AS VENDOR, MIN(RTRIM(s.SKUDESC1)) AS DESC1, MIN(s.RETAIL) AS RMIN, MAX(s.RETAIL) AS RMAX,
+      LISTAGG(RTRIM(a.SKU04), ',') WITHIN GROUP (ORDER BY a.SKU04) AS SKUS
+      FROM "ITM.DATA".ADSKU a LEFT JOIN ITMDATADDL.SKUFILE s ON s."SKU#" = a.SKU04
+      LEFT JOIN ITMDATADDL.VENDMAIN v ON v."VEND#" = s."VEND#1"
+      WHERE a.TYPE04 = 'S' AND a.ITM04 IN (${adItems(ad)}) GROUP BY a.ITM04, s."VEND#1", s.STYLE),
+    c AS (SELECT ITEM FROM g GROUP BY ITEM HAVING COUNT(DISTINCT PRODUCT) <= ${MAX_AD_PRODUCTS})
+    SELECT g.ITEM, g.VEND, g.STYLE, g.VENDOR, g.DESC1, g.RMIN, g.RMAX, g.SKUS FROM g JOIN c ON c.ITEM = g.ITEM ORDER BY g.ITEM`,
+  // Whole-range items: their three largest vendors, and how many vendors and styles they span.
+  wide: (ad) => `WITH g AS (SELECT a.ITM04 AS ITEM, s."VEND#1" AS VEND, s.STYLE AS STYLE, MIN(${AD_PRODUCT}) AS PRODUCT
+      FROM "ITM.DATA".ADSKU a LEFT JOIN ITMDATADDL.SKUFILE s ON s."SKU#" = a.SKU04
+      WHERE a.TYPE04 = 'S' AND a.ITM04 IN (${adItems(ad)}) GROUP BY a.ITM04, s."VEND#1", s.STYLE),
+    c AS (SELECT ITEM, COUNT(*) AS STYLES, COUNT(DISTINCT VEND) AS VENDORS FROM g GROUP BY ITEM HAVING COUNT(DISTINCT PRODUCT) > ${MAX_AD_PRODUCTS}),
+    v AS (SELECT g.ITEM, g.VEND, COUNT(*) AS N, ROW_NUMBER() OVER (PARTITION BY g.ITEM ORDER BY COUNT(*) DESC) AS RN
+      FROM g JOIN c ON c.ITEM = g.ITEM GROUP BY g.ITEM, g.VEND)
+    SELECT v.ITEM, RTRIM(v.VEND) AS VEND, RTRIM(m.VENDNAME) AS VENDOR, v.N, c.STYLES, c.VENDORS
+    FROM v JOIN c ON c.ITEM = v.ITEM LEFT JOIN ITMDATADDL.VENDMAIN m ON m."VEND#" = v.VEND
+    WHERE v.RN <= 3 ORDER BY v.ITEM, v.RN`,
+  targets: (ad) => `SELECT a.ITM04 AS ITEM, RTRIM(s.SKUDESC1) AS DESC1
+    FROM "ITM.DATA".ADSKU a LEFT JOIN ITMDATADDL.SKUFILE s ON s."SKU#" = a.SKU04
+    WHERE a.TYPE04 = 'T' AND a.ITM04 IN (${adItems(ad)})`,
+};
+
+/** Ad numbers typed as "7051, 7052", or null when there are none, too many, or one is out of range. */
+function parseAdNumbers(text) {
+  const ads = [...new Set((String(text).match(/\d+/g) || []).map(Number))];
+  return ads.length && ads.length <= MAX_ADS && ads.every((n) => n > 0 && n <= 99999) ? ads : null;
+}
+
+const IBMI_ERRORS = {
+  server_not_connected: `Add the ${IBMI} connector in claude.ai Settings › Connectors, then load the ad again.`,
+  needs_reauth: `Reconnect ${IBMI} in claude.ai Settings › Connectors, then load the ad again.`,
+  selection_required: `You have more than one ${IBMI} connector. Choose one when claude.ai asks, then load the ad again.`,
+  server_not_found: `${IBMI} is no longer available. Check it in claude.ai Settings › Connectors.`,
+  not_in_manifest: `${IBMI} is turned off for Flyer Studio. Turn it on from the artifact’s permissions, or use an item list file.`,
+  blocked_by_policy: `Your organization doesn’t allow ${IBMI} here. Use an item list file instead.`,
+  approval_required: 'The AS400 query needs your approval. Load the ad again and allow it.',
+  server_unavailable: 'The AS400 connector didn’t answer. Try again in a minute.',
+  rate_limited: 'Too many AS400 queries at once. Wait a few seconds, then load the ad again.',
+  not_granted: 'Connectors aren’t available in this view. Open Flyer Studio on claude.ai, or use an item list file.',
+  capability_disabled: 'Connectors aren’t available in this view. Open Flyer Studio on claude.ai, or use an item list file.',
+  capability_removed: 'Connectors aren’t available in this view. Open Flyer Studio on claude.ai, or use an item list file.',
+  tool_error: 'The AS400 refused the query',
+  truncated: 'The AS400 sent back only part of this ad, so it wasn’t loaded. Load fewer ads at a time.',
+  upstream_error: 'The AS400 could not be reached. Try again.',
+};
+const ibmiError = (e) => {
+  const text = IBMI_ERRORS[e?.code] || IBMI_ERRORS.upstream_error;
+  return e?.code === 'tool_error' ? `${text}${e.message ? `: ${e.message}` : ''}.` : text;
+};
+
+async function ibmiRows(sql) {
+  const { payload } = await mcp.callTool(IBMI, 'execute_sql', { sql });
+  if (!payload || payload.success === false || !Array.isArray(payload.data)) throw { code: 'tool_error', message: String(payload?.error || payload?.message || '') };
+  if (payload.truncated) throw { code: 'truncated' };
+  return payload.data;
+}
+
+const titleCase = (text) => String(text || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+// A SKU's description ends in its size and colour after the last hyphen: "TOP CORE MDWT HZ-L/COYOTE".
+const styleDesc = (desc) => String(desc || '').replace(/-[^-]*\/[^-]*$/, '').trim();
+const yyyymmdd = (n) => (/^\d{8}$/.test(String(n)) ? `${String(n).slice(0, 4)}-${String(n).slice(4, 6)}-${String(n).slice(6)}` : '');
+const priceRange = (lo, hi) => (!(hi > 0) || !Number.isFinite(lo) ? '' : lo === hi ? lo.toFixed(2) : `${lo.toFixed(2)}-${hi.toFixed(2)}`);
+
+/** An ad line's offer as a price line reads: "Sale $59.99", "20% off", "$75 off", "Free $200 gift card with purchase". */
+function adSale(line, targets) {
+  const amt = Number(line.AMT) || 0, pct = Number(line.PCT) || 0, dol = Number(line.DOL) || 0;
+  const gifts = [...new Set(targets.map((t) => {
+    const card = /GIFT CARD-\$(\d+)/i.exec(t.DESC1 || '');
+    return card ? `$${card[1]} gift card` : styleDesc(t.DESC1).toLowerCase();
+  }).filter(Boolean))];
+  // With a target, the percent off is the target's: 100 makes it free with the item.
+  const own = amt > 0 ? `Sale $${amt.toFixed(2)}` : !gifts.length && pct > 0 ? (pct >= 100 ? 'Free' : `${pct}% off`) : dol > 0 ? `$${dol} off` : '';
+  const gift = gifts.length ? `${pct > 0 && pct < 100 ? `${pct}% off` : 'free'} ${gifts.join(' or ')} with purchase` : '';
+  const text = [own, gift].filter(Boolean).join(' + ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** One ad's lines and SKUs as item-list offers, in the shape parseOffers gives a sheet's. */
+function adOffers(ad, { lines, styles, wide, targets }) {
+  const byItem = (rows) => rows.reduce((m, r) => m.set(Number(r.ITEM), [...(m.get(Number(r.ITEM)) || []), r]), new Map());
+  const styleRows = byItem(styles), wideRows = byItem(wide), targetRows = byItem(targets);
+  const offers = new Map();
+  for (const line of lines) {
+    const item = Number(line.ITEM), page = Number(line.PAGE) || 0;
+    if (offers.has(item)) { if (page && !offers.get(item).pages.includes(page)) offers.get(item).pages.push(page); continue; }
+    const desc = String(line.DSC || '').replace(/^\d{2}\s+/, '').trim();
+    const sale = adSale(line, targetRows.get(item) || []);
+    // Products: one per vendor and description, gathering that product's colour and size styles.
+    const products = new Map();
+    for (const r of styleRows.get(item) || []) {
+      const vendorNo = String(r.VEND || '').trim(), pDesc = styleDesc(r.DESC1) || desc;
+      const key = `${vendorNo}|${pDesc}`;
+      if (!products.has(key)) products.set(key, { id: '', desc: pDesc, brand: '', vendor: titleCase(r.VENDOR), vendorNo, sale, styles: [], skus: [], lo: Infinity, hi: 0 });
+      const p = products.get(key);
+      if (r.STYLE) p.styles.push(String(r.STYLE).trim());
+      for (const sku of String(r.SKUS || '').split(',').map((s) => normalizeSku(s.trim())).filter((s) => SKU_PATTERN.test(s))) if (!p.skus.includes(sku)) p.skus.push(sku);
+      p.lo = Math.min(p.lo, Number(r.RMIN) || Infinity); p.hi = Math.max(p.hi, Number(r.RMAX) || 0);
+    }
+    const list = [...products.values()].map(({ lo, hi, ...p }) => ({ ...p, retail: priceRange(lo, hi) }));
+    const lo = Math.min(...[...products.values()].map((p) => p.lo)), hi = Math.max(0, ...[...products.values()].map((p) => p.hi));
+    const widest = wideRows.get(item) || [];
+    // The vendor with the most SKUs (a whole-range item's largest), or all three largest when it spans several.
+    const top = widest.length
+      ? { vendor: widest.map((w) => titleCase(w.VENDOR)).filter(Boolean).join(' / '), vendorNo: Number(widest[0].VENDORS) === 1 ? String(widest[0].VEND || '') : '' }
+      : list.slice().sort((a, b) => b.skus.length - a.skus.length)[0] || { vendor: '', vendorNo: '' };
+    offers.set(item, {
+      id: '', item: String(item), ad, pages: page ? [page] : [], brand: '', vendor: top.vendor, vendorNo: top.vendorNo,
+      desc, retail: priceRange(lo, hi), sale,
+      styles: list.flatMap((p) => p.styles), skus: [...new Set(list.flatMap((p) => p.skus))],
+      // Ad desk descriptions like "ALL SUPPRESSOR COVERS" cover a whole range even when it is small.
+      products: list, allStyles: widest.length > 0 || /^ALL\b/i.test(desc), inStoreOnly: false, issues: [],
+    });
+  }
+  return [...offers.values()];
+}
+
+/** Loads AS400 ads as the item list: their offers, plus the title and sale dates when those are empty. */
+async function loadAds(ads) {
+  const say = (text, isError = false) => { $('adStatus').textContent = text; $('adStatus').classList.toggle('err', isError); };
+  const keep = !$('adKeepWrap').hidden && $('adKeep').checked;
+  $('adLoad').disabled = true;
+  say(`Reading ad ${ads.join(', ')} from the AS400…`);
+  try {
+    const header = await ibmiRows(AD_SQL.header(ads));
+    const missing = ads.filter((ad) => !header.some((h) => Number(h.AD) === ad));
+    if (missing.length) { say(`The AS400 has no ad ${missing.join(', ')}. Check the ad number${missing.length > 1 ? 's' : ''}.`, true); return; }
+    const offers = [];
+    for (const [n, ad] of ads.entries()) {
+      say(`Reading ad ${ad}${ads.length > 1 ? ` (${n + 1} of ${ads.length})` : ''} from the AS400…`);
+      const [lines, styles, wide, targets] = await Promise.all([AD_SQL.lines, AD_SQL.styles, AD_SQL.wide, AD_SQL.targets].map((q) => ibmiRows(q(ad))));
+      offers.push(...adOffers(ad, { lines, styles, wide, targets }));
+    }
+    // A kept sheet's items that the ads also list (by SKU) come from the ads.
+    const adSkus = new Set(offers.flatMap((o) => o.skus));
+    const kept = keep ? state.offers.filter((o) => !o.skus.some((s) => adSkus.has(s))) : [];
+    state.offers = withStableIds([...kept, ...offers]);
+    Object.assign(sheet, { name: `AS400 ad ${ads.join(', ')}${kept.length ? ` + ${sheet.name}` : ''}`, source: 'as400', confirmed: true });
+    if (!keep) Object.assign(sheet, { tabs: {}, tab: '', header: null, chat: [] });
+    const skuCount = showItemList();
+    try { localStorage.setItem(ADS_KEY, ads.join(', ')); } catch {}
+
+    const d = readDetails();
+    const starts = header.map((h) => yyyymmdd(h.ONDT)).filter(Boolean).sort(), ends = header.map((h) => yyyymmdd(h.OFDT)).filter(Boolean).sort();
+    if (!d.title && header[0]?.NAME) $('fTitle').value = titleCase(header[0].NAME);
+    if (!d.startDate && starts.length) $('fStart').value = starts[0];
+    if (!d.endDate && ends.length) $('fEnd').value = ends[ends.length - 1];
+    persist(); updateExport();
+
+    const wholeRange = offers.filter((o) => o.allStyles).length;
+    const noSkus = offers.filter((o) => !o.allStyles && !o.skus.length).length;
+    const noPage = offers.filter((o) => !o.pages.length).length;
+    const pages = new Set(offers.flatMap((o) => o.pages)).size;
+    $('addlg').close();
+    setStatus([
+      `Loaded ${header.map((h) => `ad ${h.AD} (${titleCase(h.NAME)})`).join(', ')}: ${offers.length} items on ${pages} page${pages === 1 ? '' : 's'} with ${skuCount} SKUs.`,
+      wholeRange && `${wholeRange} ${wholeRange === 1 ? 'is a whole-range offer' : 'are whole-range offers'} ("all …", or more than ${MAX_AD_PRODUCTS} products), linked by brand rather than SKU.`,
+      noSkus && `${noSkus} ${noSkus === 1 ? 'has' : 'have'} no SKUs in the AS400 yet; load the ad again once they're added.`,
+      noPage && `${noPage} ${noPage === 1 ? 'has' : 'have'} no page and ${noPage === 1 ? 'is' : 'are'} matched by name.`,
+      kept.length && `Kept ${kept.length} items from the item list file that the ads don't list.`,
+    ].filter(Boolean).join(' '));
+  } catch (e) {
+    if (e?.code === 'cancelled') return;
+    say(ibmiError(e), true);
+  } finally {
+    $('adLoad').disabled = false;
+  }
+}
+
+$('adBtn').addEventListener('click', () => {
+  const input = $('adNumbers');
+  if (!input.value) { try { input.value = localStorage.getItem(ADS_KEY) || ''; } catch {} }
+  $('adKeepWrap').hidden = !(sheet.source === 'file' && state.offers.length);
+  $('adKeepName').textContent = sheet.name;
+  $('adStatus').textContent = ''; $('adStatus').classList.remove('err');
+  $('addlg').showModal();
+  input.focus();
+});
+$('adForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const ads = parseAdNumbers($('adNumbers').value);
+  if (!ads) {
+    $('adStatus').textContent = `Enter one to ${MAX_ADS} ad numbers, like 7051 or 7051, 7052.`;
+    $('adStatus').classList.add('err');
+    return;
+  }
+  loadAds(ads);
+});
+$('adClose').addEventListener('click', () => $('addlg').close());
+
+// ---------- AS400 SKU lookup ----------
+// Products a flyer features at their regular price are on no ad, so an AS400 item list has nothing
+// to link them to. This finds them in the SKU file instead: the printed brand picks the vendors
+// (VENDMAIN, by name, spaces ignored), and the box's product words and printed prices pick that
+// vendor's styles (SKUFILE), counting only SKUs rated for this year or the one either side of it.
+// Brand, words and prices reach the SQL only as letters, digits and numbers (see lookupTerms).
+// Words that name a kind of product rather than a model, too common in SKU descriptions to pick one out.
+const LOOKUP_GENERIC = new Set(['JACKET', 'BIB', 'BIBS', 'PANT', 'PANTS', 'HOODIE', 'HOODY', 'VEST', 'SHIRT', 'TOP', 'TOPS', 'BOOT', 'BOOTS', 'MENS', 'MEN', 'WOMENS', 'WOMEN', 'YOUTH', 'KIDS', 'AVAILABLE', 'WITH', 'AND', 'THE', 'FOR', 'NON', 'INSULATED', 'QUARTER', 'ZIP', 'HALF', 'SYSTEM', 'EDITION', 'THERMAL', 'SCOPE', 'RIFLESCOPE', 'BINOCULARS', 'LRF', 'GTX', 'NEW', 'SALE']);
+const LOOKUP_SQL_LIMIT = 9000; // the connector takes at most 10,000 characters of SQL
+// Products found for a box, best first, until the page is left or reloaded.
+const lookupFound = new WeakMap();
+
+/** The vendor-name key, distinctive words and printed prices a box is looked up by. */
+function lookupTerms(h) {
+  const clean = (text) => String(text || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const labelWords = clean(h.label);
+  const brandWords = h.brand ? clean(h.brand) : labelWords.slice(0, 1);
+  const words = [...new Set(labelWords.filter((w) => w.length >= 3 && !brandWords.includes(w) && !LOOKUP_GENERIC.has(w)))].slice(0, 6);
+  const prices = [...new Set(moneyIn(h.priceText))].filter((n) => n > 0 && n < 100000).slice(0, 6);
+  return { brand: brandWords.join('').slice(0, 30), words, prices };
+}
+const canLookUp = ({ brand, words, prices }) => brand.length >= 3 && (words.some((w) => /[A-Z]/.test(w)) || prices.length > 0);
+
+/** SKU ratings for last year, this year and next (RATE1: a season letter then a year digit, or a two-digit year when unrated). */
+function recentRating() {
+  const yy = new Date().getFullYear() % 100;
+  const years = [yy - 1, yy, yy + 1];
+  return `(SUBSTR(s.RATE1, 3, 2) IN (${years.map((y) => `'${String(y).padStart(2, '0')}'`).join(', ')})
+    OR (SUBSTR(s.RATE1, 3, 1) NOT BETWEEN '0' AND '9' AND SUBSTR(s.RATE1, 4, 1) IN (${years.map((y) => `'${y % 10}'`).join(', ')})))`;
+}
+
+/** One box's query: its vendors' recent styles that share a word or a price with the box, best 15 first. */
+function lookupBranch(box, { brand, words, prices }) {
+  const like = (w) => `s.SKUDESC1 LIKE '%${w}%'`;
+  const priced = prices.length ? `s.RETAIL IN (${prices.map((n) => n.toFixed(2)).join(', ')})` : '';
+  const wordScore = words.length ? `MAX(${words.map((w) => `CASE WHEN ${like(w)} THEN 1 ELSE 0 END`).join(' + ')})` : '0';
+  const priceScore = priced ? `MAX(CASE WHEN ${priced} THEN 1 ELSE 0 END)` : '0';
+  const match = [...words.filter((w) => /[A-Z]/.test(w)).map(like), priced].filter(Boolean).join(' OR ');
+  return `SELECT * FROM (SELECT ${box} AS BOX, RTRIM(s."VEND#1") AS VEND, RTRIM(s.STYLE) AS STYLE, MIN(RTRIM(s.SKUDESC1)) AS DESC1,
+      MIN(s.RETAIL) AS RMIN, MAX(s.RETAIL) AS RMAX, ${wordScore} AS WORDS, ${priceScore} AS PRICE,
+      LISTAGG(RTRIM(s."SKU#"), ',') WITHIN GROUP (ORDER BY s."SKU#") AS SKUS
+    FROM ITMDATADDL.SKUFILE s
+    WHERE s."VEND#1" IN (SELECT "VEND#" FROM ITMDATADDL.VENDMAIN WHERE REPLACE(UPPER(VENDNAME), ' ', '') LIKE '%${brand}%')
+      AND (${match}) AND ${recentRating()}
+    GROUP BY s."VEND#1", s.STYLE ORDER BY ${wordScore} + ${priceScore} DESC FETCH FIRST 15 ROWS ONLY) b${box}`;
+}
+
+/** A box's rows as products (one per vendor and description, gathering colour styles), best first. */
+function lookupProducts(rows) {
+  const products = new Map();
+  for (const r of rows) {
+    const vendorNo = String(r.VEND || '').trim(), desc = styleDesc(r.DESC1);
+    const key = `${vendorNo}|${desc}`;
+    if (!products.has(key)) products.set(key, { desc, vendorNo, styles: [], skus: [], words: 0, price: 0, lo: Infinity, hi: 0 });
+    const p = products.get(key);
+    p.styles.push(String(r.STYLE || '').trim());
+    for (const sku of String(r.SKUS || '').split(',').map((x) => normalizeSku(x.trim())).filter((x) => SKU_PATTERN.test(x))) if (!p.skus.includes(sku)) p.skus.push(sku);
+    p.words = Math.max(p.words, Number(r.WORDS) || 0);
+    p.price = Math.max(p.price, Number(r.PRICE) || 0);
+    p.lo = Math.min(p.lo, Number(r.RMIN) || Infinity);
+    p.hi = Math.max(p.hi, Number(r.RMAX) || 0);
+  }
+  return [...products.values()]
+    .map(({ lo, hi, ...p }) => ({ ...p, retail: priceRange(lo, hi) }))
+    .sort((a, b) => b.words + b.price - (a.words + a.price));
+}
+
+/** Linked without asking only when one product has every distinctive word and a printed price. */
+function clearWinner(found, terms) {
+  const [best, next] = found;
+  return !!best && best.price > 0 && terms.words.length > 0 && best.words === terms.words.length
+    && !(next && next.words === best.words && next.price === best.price);
+}
+const lookupLinked = (h, p) => p.skus.length > 0 && p.skus.every((sku) => h.skus.includes(sku));
+function linkLookup(h, p) { h.skus = [...new Set([...h.skus, ...p.skus])].slice(0, 60); }
+
+/** Looks boxes up in the SKU file, linking clear matches and keeping the rest as suggestions. */
+async function findInAs400(boxes) {
+  const targets = boxes.map((h) => ({ h, terms: lookupTerms(h) })).filter((t) => canLookUp(t.terms));
+  const chunks = [];
+  for (const t of targets) {
+    const last = chunks[chunks.length - 1];
+    const branch = lookupBranch(last ? last.length : 0, t.terms);
+    if (last && last.sql.length + branch.length < LOOKUP_SQL_LIMIT) { last.push(t); last.sql += `\nUNION ALL\n${branch}`; }
+    else { const chunk = [t]; chunk.sql = lookupBranch(0, t.terms); chunks.push(chunk); }
+  }
+  let linked = 0, suggested = 0;
+  for (const chunk of chunks) {
+    const rows = await ibmiRows(chunk.sql);
+    chunk.forEach((t, box) => {
+      const found = lookupProducts(rows.filter((r) => Number(r.BOX) === box)).slice(0, 6);
+      lookupFound.set(t.h, found);
+      if (clearWinner(found, t.terms)) { linkLookup(t.h, found[0]); linked++; }
+      else if (found.length) suggested++;
+    });
+  }
+  return { tried: targets.length, skipped: boxes.length - targets.length, linked, suggested };
+}
+
+
+$('lookupBtn').addEventListener('click', async () => {
+  const p = currentPage();
+  const boxes = (p?.hotspots || []).filter(noProduct);
+  if (!boxes.length) { setStatus('Every box on this page already has SKUs.'); return; }
+  state.busy = true; updateButtons();
+  setStatus(`Looking up ${boxes.length} box${boxes.length === 1 ? '' : 'es'} in the AS400 SKU file…`);
+  try {
+    const { tried, skipped, linked, suggested } = await findInAs400(boxes);
+    persist();
+    setStatus([
+      `Looked up ${tried} box${tried === 1 ? '' : 'es'} in the AS400 SKU file: linked ${linked}`,
+      suggested ? `; ${suggested} ${suggested === 1 ? 'has' : 'have'} suggestions to pick from (select the box)` : '',
+      tried - linked - suggested ? `; ${tried - linked - suggested} found nothing` : '',
+      skipped ? `. ${skipped} had no brand or product words to look up` : '',
+      '.',
+    ].join(''));
+  } catch (e) {
+    setStatus(ibmiError(e), true);
+  } finally {
+    state.busy = false; updateButtons(); renderStage(); renderRail();
+  }
+});
+
+/** A box's AS400 lookup in its panel: a button for this box, then what was found, with Add and Remove. */
+function lookupBlock(h, edit) {
+  if (!mcp || state.example) return [];
+  const found = lookupFound.get(h);
+  if (!found && !noProduct(h)) return [];
+  const find = el('button', { className: 'btn', type: 'button', textContent: found ? 'Look up again' : 'Find in AS400', disabled: state.busy });
+  find.addEventListener('click', async () => {
+    find.disabled = true; find.textContent = 'Looking up…';
+    try {
+      const { tried, linked } = await findInAs400([h]);
+      if (!tried) setStatus('This box has no brand, product words or price to look up. Fill in its name and price first.', true);
+      else setStatus(linked ? 'Linked this box to the SKUs found in the AS400.' : lookupFound.get(h)?.length ? 'Pick the AS400 product this box shows.' : 'Nothing like this box is in the AS400 SKU file for its brand.');
+      if (linked) h.locked = true;
+      persist();
+    } catch (e) {
+      setStatus(ibmiError(e), true);
+    }
+    renderStage(); renderRail();
+  });
+  const list = el('ul', { className: 'suggestions' }, ...(found || []).map((p) => {
+    const linked = lookupLinked(h, p);
+    const use = el('button', { className: 'linkbtn', type: 'button', textContent: linked ? 'Remove' : 'Add' });
+    use.setAttribute('aria-label', `${linked ? 'Remove' : 'Add'} ${p.desc}`);
+    use.addEventListener('click', () => edit((x) => {
+      if (linked) x.skus = x.skus.filter((sku) => !p.skus.includes(sku)); else linkLookup(x, p);
+    }));
+    const notes = [p.retail && `$${p.retail}`, `${p.skus.length} SKU${p.skus.length === 1 ? '' : 's'}`, `style ${p.styles.slice(0, 2).join(', ')}${p.styles.length > 2 ? '…' : ''}`, p.price ? 'price matches' : ''];
+    return el('li', {}, el('span', { textContent: p.desc }), el('span', { className: 'sub', textContent: notes.filter(Boolean).join(' · ') }), use);
+  }));
+  if (found && !found.length) list.append(el('li', { className: 'sub', textContent: 'Nothing found for this brand.' }));
+  return [el('div', { className: 'sublabel', textContent: 'AS400 SKU file' }), ...(found ? [list] : []), find];
+}
 
 // ----- asking Claude -----
 const COLUMN_PROMPT = `You help read a SCHEELS advertising item list (a spreadsheet of the products in a sale flyer) so its rows can be matched to the printed flyer.
@@ -797,20 +1222,29 @@ function offersForPage(i, items) {
   return [...near, ...elsewhere].slice(0, MAX_OFFERS_PER_PAGE);
 }
 
-const brandLabel = (x) => (x.vendor && x.vendor.toLowerCase() !== (x.brand || '').toLowerCase() ? `${x.brand} (vendor ${x.vendor})` : x.brand);
+/** An entry's prices for a note: "reg 139.99, sale 111.99", or the offer as written ("20% off"). */
+const priceNote = (x) => [x.retail && `reg ${x.retail}`, x.sale && (/^\$?[\d,.]+$/.test(String(x.sale).trim()) ? `sale ${x.sale}` : x.sale)].filter(Boolean).join(', ');
+// AS400 items have a vendor but no brand; the printed brand comes from the page.
+const brandLabel = (x) => (!x.brand ? (x.vendor ? `vendor ${x.vendor}` : '') : x.vendor && x.vendor.toLowerCase() !== x.brand.toLowerCase() ? `${x.brand} (vendor ${x.vendor})` : x.brand);
+/** Who makes an item-list entry, for showing it: its brand, else its offer's, else the vendor. */
+const makerOf = (entry, offer = entry) => entry.brand || offer.brand || entry.vendor || offer.vendor || '';
+
+const MAX_PRODUCTS_LISTED = 12;
 
 function offerLine(o) {
-  const price = [o.retail && `reg ${o.retail}`, o.sale && `sale ${o.sale}`].filter(Boolean).join(', ');
+  const price = priceNote(o);
   const skus = o.skus.length ? `${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'}` : 'no SKU';
   const notes = [o.allStyles && 'whole brand/category offer', o.inStoreOnly && 'in store only'].filter(Boolean).join(', ');
   const line = [o.id, brandLabel(o), o.desc, price, skus, o.styles.slice(0, 4).join(' '), notes].filter(Boolean).join(' | ');
   if (!o.products || o.products.length < 2) return line;
-  const products = o.products.map((p) => {
+  // Up to MAX_PRODUCTS_LISTED products per item keep a page's prompt small; the item's own id covers the rest.
+  const products = o.products.slice(0, MAX_PRODUCTS_LISTED).map((p) => {
     const maker = p.brand && p.brand.toLowerCase() !== (o.brand || '').toLowerCase() ? `${p.brand} ` : '';
-    const price = [p.retail && `reg ${p.retail}`, p.sale && `sale ${p.sale}`].filter(Boolean).join(', ');
-    return `    ${p.id} | ${maker}${p.desc}${price ? ` | ${price}` : ''} | ${p.skus.length} SKU${p.skus.length === 1 ? '' : 's'}`;
+    const own = priceNote(p) !== price ? priceNote(p) : '';
+    return `    ${p.id} | ${maker}${p.desc}${own ? ` | ${own}` : ''} | ${p.skus.length} SKU${p.skus.length === 1 ? '' : 's'}`;
   });
-  return [line + ' | products:', ...products].join('\n');
+  const more = o.products.length - products.length;
+  return [line + ' | products:', ...products, ...(more > 0 ? [`    and ${more} more products`] : [])].join('\n');
 }
 
 // ---------- PDF ----------
@@ -825,7 +1259,7 @@ $('pdfInput').addEventListener('change', async (ev) => {
     const saved = restore();
     if (saved?.pages?.length === pdf.numPages) {
       saved.pages.forEach((p, i) => Object.assign(state.pages[i], {
-        hotspots: (p.hotspots || []).map((h) => ({ ...h, skus: (h.skus || []).map(normalizeSku) })),
+        hotspots: (p.hotspots || []).map((h) => ({ ...h, skus: (h.skus || []).map(normalizeSku), fallback: toLink(h.fallback, h.label) })),
         status: p.status || 'empty',
         error: p.error || (p.status === 'error' ? 'Generating this page failed in an earlier session. Generate it again.' : ''),
       }));
@@ -914,6 +1348,63 @@ async function ensurePreview(i) {
   await textItems(i);
 }
 
+// ---------- fallback link ----------
+// A hotspot's link for when it has no product, in the shape of the Amplience link partial
+// (https://scheels.com/partial/link) that the site's AmplienceLink reads: a category with attribute
+// filters (brand, gender, …), a content page, or a URL. searchTerm is the flyer's own addition, used
+// only when nothing more specific is set. Kept in step with toFallbackLink in the importer's link.ts.
+const isExternalUrl = (url) => /^https?:\/\//i.test(url);
+/** "stores" → "/stores", "www.youtube.com/watch?v=…" → "https://www.youtube.com/watch?v=…". */
+function normalizeUrl(value) {
+  if (isExternalUrl(value) || value.startsWith('/')) return value;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i.test(value)) return `https://${value}`;
+  return `/${value}`;
+}
+
+const linkText = (v) => (typeof v === 'string' ? v.trim() : '');
+/** A clean link from saved data. Flyers saved before the link partial hold { type: 'brand' | 'category' | 'search', value }. */
+function toLink(raw, label = '') {
+  if (raw && typeof raw.type === 'string' && 'value' in raw) {
+    const value = linkText(raw.value) || linkText(label);
+    if (!value) return {};
+    if (raw.type === 'brand') return { attributes: [{ attributeName: 'brand', attributeValue: value }] };
+    return raw.type === 'category' ? { category: value } : { searchTerm: value };
+  }
+  const link = {};
+  for (const key of ['category', 'searchTerm', 'urlSlug', 'pageID', 'productID', 'anchor', 'clickID']) {
+    const value = linkText(raw?.[key]);
+    if (value) link[key] = key === 'urlSlug' ? normalizeUrl(value) : value;
+  }
+  for (const key of ['onSale', 'newPage', 'useStoreAvailability']) if (raw?.[key] === true) link[key] = true;
+  const attributes = (Array.isArray(raw?.attributes) ? raw.attributes : [])
+    .map((a) => ({ attributeName: linkText(a?.attributeName), attributeValue: linkText(a?.attributeValue) }))
+    .filter((a) => a.attributeName && a.attributeValue);
+  if (attributes.length) link.attributes = attributes;
+  return link;
+}
+
+const filledAttributes = (link) => (link.attributes || []).filter((a) => a.attributeName && a.attributeValue);
+/** True when the link points somewhere more specific than a search. */
+const hasTarget = (link) => !!(link.category || filledAttributes(link).length || link.urlSlug || link.pageID || link.productID);
+const hasLink = (link) => hasTarget(link) || !!link.searchTerm;
+
+const LINK_KINDS = [['products', 'Products (category and filters)'], ['content', 'Content page (page ID)'], ['url', 'URL slug']];
+// The fields each kind of link uses; switching kind drops the others. clickID and newPage apply to every kind.
+const LINK_KIND_FIELDS = { products: ['category', 'attributes', 'onSale', 'searchTerm', 'productID', 'useStoreAvailability'], content: ['pageID', 'anchor'], url: ['urlSlug', 'anchor'] };
+/** The kind a person chose for this hotspot's link, else the one its fields say. */
+const linkKindOf = (h) => h.linkKind || (h.fallback.urlSlug ? 'url' : h.fallback.pageID ? 'content' : 'products');
+const forKind = (link, kind) => Object.fromEntries(Object.entries(link).filter(([key]) => LINK_KIND_FIELDS[kind].includes(key) || key === 'clickID' || key === 'newPage'));
+
+/** What the link opens, in words. The site lays out a category URL by its URL rules, which Studio can't read. */
+function describeLink(link, label) {
+  if (link.urlSlug) return `Opens ${link.urlSlug}${link.anchor ? `#${link.anchor}` : ''}${link.newPage ? ' in a new tab' : ''}.`;
+  if (link.pageID) return `Opens the content page ${link.pageID === 'deals' ? '/deals' : `/cp/${link.pageID}`}${link.anchor ? `#${link.anchor}` : ''}.`;
+  const filters = filledAttributes(link).map((a) => `${a.attributeName} ${a.attributeValue.split('|').map((v) => v.trim()).join(' or ')}`);
+  if (!link.category && !filters.length && !link.productID) return `Searches scheels.com for “${link.searchTerm || label}”.`;
+  if (link.productID && !link.productID.includes('|')) return `Opens the product ${link.productID}.`;
+  return `Lists ${link.category ? `the ${link.category} category` : 'all products'}${filters.length ? ` with ${filters.join(', ')}` : ''}${link.onSale ? ', on sale only' : ''}.`;
+}
+
 // ---------- generation ----------
 const PROMPT_RULES = `You turn one page of a printed SCHEELS catalog into shoppable hotspots. It may be a sale flyer (products with prices and offers) or a lookbook or gift guide (products shown in lifestyle photos, often with no prices).
 A hotspot is the area a shopper taps for one product or offer: its photo together with its name and price when they are printed. Make a hotspot for every product a shopper could identify and buy, even when no price is printed. In a lifestyle scene with several products, give each product its own box around it; when products are named in numbered callouts or a product list, use those names and box each product (and its callout). Skip page headers, section titles, banners, legal text, store information, logos, QR codes and decorative graphics. Only pages with no shoppable products (articles, partner logos, a cover with no products) have no hotspots.
@@ -921,8 +1412,14 @@ Coordinates are percentages of the page (0-100), origin top-left. Use the text i
 Keep the boxes tidy: products laid out in a row or grid get boxes of the same width and height whose edges line up (same top for a row, same left for a column, the same gaps between them), following the layout's own panels or columns. Only break the pattern where the layout does: product photos that overlap, cut-outs that spill across panels, or lifestyle scenes. When one offer covers several products ("Men's & Women's", "or"), make one hotspot. When two priced products share one photo, split the area between them and mark both low confidence.
 When an item list is given, set offerIds to the item-list ids whose brand and product clearly match the hotspot: a product id (like o3k9xa-7f2) when an item lists several products and the hotspot shows one of them, else the item id (like o3k9xa). Use several ids when one hotspot advertises several items. The vendor name can be closer to the printed brand than the brand column (SILENCER vs SilencerCo). Leave offerIds empty when unsure; never invent ids.
 priceText is the item's price line as printed, or empty when the page prints no price for it; never make a price up. A tag like SALE, NEW or CLEARANCE with no amount is not a price: when the item prints no sale price because a banner or heading covers it ("20% off all blaze clothing"), put that offer first, e.g. "20% off · Reg. $139.99".
-description holds offer terms a shopper should know that the price line leaves out: the banner or heading offer that covers the item, exclusions, rebates, gifts with purchase, limits. Under 25 words, in plain sentences. Empty when the price line says it all.
+description is empty for most hotspots. Fill it only with printed terms that change what this product costs or what the shopper gets and that the price line does not say: a rebate, a gift or gift card with purchase, a limit, a bundle, or an exclusion about this product itself (sizes or colours not included). Never repeat the price line's offer, and leave out a banner's fine print about other brands or products ("Excludes Sitka, First Lite & advertised sale prices" does not belong on a Scheels Outfitters jacket). Under 25 words, in plain sentences.
 confidence is "high" only when the box is unambiguous (and, if an item list was given, the match is certain); otherwise "low" with a short note saying what to check.`;
+
+// AS400 item lists read like the ad desk writes them, which on its own leaves Claude unsure of matches
+// it should be sure of (every box marked to check). This says how to read them, what makes a match
+// certain, and that regular-price products are missing from the ad by design.
+const AS400_NOTE = `The item list comes from the AS400 ad file, so it reads like the ad desk writes it: descriptions are abbreviated (MDWT midweight, HZ half zip, QZ quarter zip, JKT jacket, SWTSHIRT sweatshirt, INS insulated, CFR or CRF centerfire rifle, SG shotgun), often end in a shortened brand (-HADLY or -HDL for Hadley, -BM for Benchmade), and an item's brand appears only as its vendor (Sitka Mountain Gear for Sitka, Hornady Bullet Mfg Co for Hornady). Its prices are the ad's own: when the printed sale price or offer equals an item's, and the brand and kind of product agree, the match is certain. The ad lists only discounted items, so products printed at just a regular price are usually not on it: leave their offerIds empty unless an item clearly matches, and judge their confidence on the box alone, not on the missing match.`;
+const itemListNotes = () => (sheet.source === 'as400' ? [AS400_NOTE] : []);
 
 function buildPrompt(i, items, regions, rows, locked, withImage) {
   const lines = [PROMPT_RULES, '', withImage
@@ -932,7 +1429,7 @@ function buildPrompt(i, items, regions, rows, locked, withImage) {
     ? `Text items on this page (id | x | y | w | h | text), in % of the page:\n${items.map((t) => `${t.id} | ${t.x} | ${t.y} | ${t.w} | ${t.h} | ${t.text}`).join('\n')}`
     : 'This page has no text layer. Place boxes from the image alone and mark every hotspot low confidence.');
   if (regions.length) lines.push(`Photo regions on this page (id | x | y | w | h), in % of the page, largest first. Full-page backgrounds are left out:\n${regions.map((r) => `${r.id} | ${r.x} | ${r.y} | ${r.w} | ${r.h}`).join('\n')}`);
-  if (rows.length) lines.push(`Advertised items for this page from the item list (id | brand | description | prices | SKUs | styles | notes):\n${rows.map(offerLine).join('\n')}`);
+  if (rows.length) lines.push(`Advertised items for this page from the item list (id | brand | description | prices | SKUs | styles | notes):\n${rows.map(offerLine).join('\n')}`, ...itemListNotes());
   if (locked.length) lines.push(`A person already placed these hotspots; do not output hotspots for these products or areas:\n${locked.map((h) => `- ${h.label} at x ${h.box.x}, y ${h.box.y}, w ${h.box.w}, h ${h.box.h}`).join('\n')}`);
   lines.push(`Reply with only JSON of this shape:
 {"hotspots":[{"label":"Pulsar Talion XG35 Scope","priceText":"Now $2,199.97 · Reg. $3,499.97","description":"","brand":"Pulsar","box":{"x":70,"y":1,"w":29,"h":19},"offerIds":["o3k9xa"],"confidence":"high","note":""}]}
@@ -955,8 +1452,8 @@ function fromOffers(offers, label, printedBrand) {
   const wholeRange = offers.length > 0 && offers.every((o) => o.allStyles || !o.skus.length);
   const product = offers.find((o) => o.desc)?.desc || label.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '');
   const fallback = wholeRange && brand
-    ? { type: 'brand', value: brand }
-    : { type: 'search', value: [brand, product.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '')].filter(Boolean).join(' ') || label };
+    ? { attributes: [{ attributeName: 'brand', attributeValue: brand }] }
+    : { searchTerm: [brand, product.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '')].filter(Boolean).join(' ') || label };
   // Items listed without SKUs can still be found by their Scheels Search id, vendor number + style
   // (21452-LEGACY-KB); colour-coded styles (XT-BB) also try their base style (21452-XT). The importer
   // confirms these and fills in the real SKUs.
@@ -970,6 +1467,15 @@ function fromOffers(offers, label, printedBrand) {
   }))].slice(0, 20);
   return { brand, skus, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
 }
+
+/**
+ * True when a price line prints a sale or offer (a sale price, % or $ off, a gift, a price beside the
+ * regular one), not just a regular price: "$500", "$175–$185" and "Reg. $229.95" are regular prices.
+ */
+const printsOffer = (priceText) => {
+  const text = String(priceText || '').replace(/\$\s*[\d,.]+\s*[–—-]\s*\$?\s*[\d,.]+/g, '$0');
+  return /\b(sale|now|save|off|free|was|bogo|buy)\b|%/i.test(text) || (text.match(/\$\s*\d/g) || []).length > 1;
+};
 
 /** A sale cell as it reads on a price line: 111.99 → "Sale $111.99", 0.2 (a % cell) → "20% off", text as written. */
 function saleText(sale) {
@@ -1134,12 +1640,13 @@ function suggestEntries(h, pageNumber, limit = 5) {
   return scored.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-/** Links a hotspot to item-list entries, taking SKUs, fallback and in-store flag from them. */
+/** Links a hotspot to item-list entries, taking SKUs, in-store flag and (unless set by hand) the fallback link from them. */
 function linkToEntries(h, ids) {
   const index = offerIndex(state.offers);
   const entries = ids.map((id) => index.get(id)).filter(Boolean);
   const derived = fromOffers(entries, h.label, h.brand || '');
-  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, fallback: derived.fallback, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
+  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
+  if (!h.linkEdited) h.fallback = derived.fallback;
 }
 
 const AUTO_MATCH_MIN = 1.0;   // shared words plus a price or model-number agreement
@@ -1248,7 +1755,7 @@ async function textInBox(i, box) {
 
 const AREA_PROMPT = `You fill in one shoppable hotspot on a printed SCHEELS sale flyer. You get the text printed inside the hotspot's box (in reading order; prices can be split into pieces like "$" "3,999" "99") and the advertised items from the ad's item list that may be on this page.
 Reply with only JSON: {"label":"brand and product name as printed","priceText":"price line as printed, e.g. Now $2,199.97 · Reg. $3,499.97","description":"","brand":"printed brand","offerIds":["o3k9xa"],"note":""}
-priceText: empty when no price is printed in the box (lookbooks and gift guides often print none); never make one up. A tag like SALE with no amount is not a price; use the item list's sale price or offer instead when there is one. description: offer terms printed in the box that the price line leaves out (exclusions, rebates, gifts with purchase), under 25 words; empty when none.
+priceText: empty when no price is printed in the box (lookbooks and gift guides often print none); never make one up. A tag like SALE with no amount is not a price; use the item list's sale price or offer instead when there is one. description: empty for most boxes. Only printed terms that change what this product costs or what the shopper gets and that the price line leaves out (a rebate, a gift with purchase, a limit, an exclusion about this product itself), under 25 words; never a repeat of the price line's offer or a banner's fine print about other brands.
 offerIds: every item-list id (or product id like o3k9xa-7f2) the box clearly advertises; several when one box shows several products; empty when unsure. Never invent ids. Put anything a reviewer should check in note.`;
 
 /**
@@ -1264,7 +1771,7 @@ async function fillFromArea(i, h) {
   if (sample) {
     setStatus('Reading this area…');
     const offers = offersForPage(i, items);
-    const prompt = [AREA_PROMPT, `Printed inside the box:\n${text}`, offers.length ? `Advertised items for this page (id | brand | description | prices | SKUs | styles | notes):\n${offers.map(offerLine).join('\n')}` : 'No item list was given; leave offerIds empty.'].join('\n\n');
+    const prompt = [AREA_PROMPT, `Printed inside the box:\n${text}`, offers.length ? `Advertised items for this page (id | brand | description | prices | SKUs | styles | notes):\n${offers.map(offerLine).join('\n')}` : 'No item list was given; leave offerIds empty.', ...(offers.length ? itemListNotes() : [])].join('\n\n');
     try {
       const r = await sample.json(prompt, { modelTier: 'default' });
       h.label = String(r?.label || '').trim() || h.label;
@@ -1275,7 +1782,7 @@ async function fillFromArea(i, h) {
       const index = offerIndex(state.offers);
       const ids = Array.isArray(r?.offerIds) ? r.offerIds.map(String).filter((id) => index.has(id)) : [];
       if (ids.length) linkToEntries(h, ids);
-      else if (!h.fallback?.value) h.fallback = { type: 'search', value: h.label };
+      else if (!hasLink(h.fallback)) h.fallback = { searchTerm: h.label };
       h.textItemIds = inside.map((t) => t.id);
       setStatus(ids.length ? `Filled from this area and linked ${ids.length} item-list ${ids.length === 1 ? 'entry' : 'entries'}.` : 'Filled from this area. No item-list match: pick one from the suggestions if it should have one.');
       return true;
@@ -1294,7 +1801,7 @@ async function fillFromArea(i, h) {
     linkToEntries(h, [best.id]);
     setStatus(`Filled from this area and linked "${best.entry.desc}" from the item list.`);
   } else {
-    if (!h.fallback?.value) h.fallback = { type: 'search', value: h.label };
+    if (!hasLink(h.fallback)) h.fallback = { searchTerm: h.label };
     setStatus('Filled from this area. Pick the item-list entry from the suggestions.');
   }
   return true;
@@ -1312,13 +1819,24 @@ function problemsFor(h, items) {
     if (l < h.box.x - s || t0 < h.box.y - s || r > h.box.x + h.box.w + s || b > h.box.y + h.box.h + s) out.push('The box does not cover all of its printed text.');
   }
   if (!h.label) out.push('Give the product a name.');
-  if (!h.fallback?.value) out.push('Add a fallback link value.');
-  if (state.offers.length && !h.skus.length && !h.objectIds?.length && !h.inStoreOnly) out.push('No item-list match. Add a SKU or rely on the fallback link.');
+  const kind = linkKindOf(h);
+  if (kind === 'url' && !h.fallback.urlSlug) out.push('Add the URL the link opens.');
+  else if (kind === 'content' && !h.fallback.pageID) out.push('Add the page ID of the content page the link opens.');
+  else if (!hasLink(h.fallback)) out.push('Add a link for when no product is found.');
+  // An AS400 ad lists only discounted items, so a box printing just a regular price is expected to have
+  // no match; the importer finds its product by the printed name and price.
+  const offAd = sheet.source === 'as400' && !printsOffer(h.priceText);
+  if (state.offers.length && !h.skus.length && !h.objectIds?.length && !h.offerIds?.length && !h.inStoreOnly && !offAd) out.push('No item-list match. Add a SKU or rely on the fallback link.');
   return out;
 }
 
+/** A box with nothing to link to a product: no SKU or product id, and not in store only. */
+const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.inStoreOnly;
+/** Claude marked it to check, or it has no product yet (the importer then has to find one by name). */
+const lowConfidence = (h) => h.confidence === 'low' || noProduct(h);
+
 /** A box still to look at: low confidence or a failed check, unless a person marked it reviewed. */
-const needsCheck = (h, items) => !h.reviewed && (h.confidence === 'low' || problemsFor(h, items).length > 0);
+const needsCheck = (h, items) => !h.reviewed && (lowConfidence(h) || problemsFor(h, items).length > 0);
 
 // ---------- rendering ----------
 function pageSummary(p) {
@@ -1363,17 +1881,50 @@ function renderStage() {
   $('pageError').textContent = p.status === 'error' && p.error ? `This page failed to generate: ${p.error}` : '';
   p.hotspots.forEach((h, idx) => {
     const problems = problemsFor(h, p.items);
-    const box = el('div', { className: `hs${h.confidence === 'low' && !h.reviewed ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
+    const box = el('div', { className: `hs${lowConfidence(h) && !h.reviewed ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
     box.setAttribute('role', 'button');
     box.setAttribute('aria-pressed', String(idx === state.selected || state.multi.has(idx)));
     if (state.multi.has(idx)) box.classList.add('multi');
-    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : h.confidence === 'low' && !h.reviewed ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
+    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : lowConfidence(h) && !h.reviewed ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
     Object.assign(box.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
-    box.append(el('span', { className: 'n', textContent: String(idx + 1) }), el('span', { className: 'grip', ariaHidden: 'true' }));
+    box.append(el('span', { className: 'n', textContent: String(idx + 1) }), ...['nw', 'ne', 'sw', 'se'].map((corner) => el('span', { className: `grip ${corner}`, ariaHidden: 'true' })));
     box.dataset.idx = String(idx);
     sheet.append(box);
   });
+  // The selected box's delete button sits on its top edge, beside the box rather than inside it
+  // (a button inside the box's own button role would hide it from screen readers).
+  const picked = p.hotspots[state.selected];
+  if (picked && !state.multi.size) {
+    const del = el('button', { type: 'button', className: 'hsdel', textContent: '×', title: 'Delete this hotspot (Delete key)' });
+    del.setAttribute('aria-label', `Delete hotspot ${state.selected + 1}`);
+    placeDelete(del, picked.box);
+    del.addEventListener('click', () => deleteHotspots([state.selected]));
+    sheet.append(del);
+  }
   renderInspector();
+}
+
+const placeDelete = (button, box) => Object.assign(button.style, { left: `${box.x + box.w / 2}%`, top: `${box.y}%` });
+
+/** Deletes hotspots from the current page, with Undo in the status line. */
+function deleteHotspots(indices) {
+  const page = currentPage();
+  const removed = [...new Set(indices)].sort((a, b) => a - b).map((i) => ({ i, h: page.hotspots[i] })).filter((r) => r.h);
+  if (!removed.length) return;
+  removed.slice().reverse().forEach(({ i }) => page.hotspots.splice(i, 1));
+  state.multi = new Set(); state.selected = -1;
+  persist(); renderStage(); renderRail();
+  const [first] = removed;
+  setStatus(removed.length === 1 ? `Deleted hotspot ${first.i + 1}${first.h.label ? ` (${first.h.label})` : ''}. ` : `Deleted ${removed.length} hotspots. `);
+  const undo = el('button', { className: 'linkbtn', type: 'button', textContent: 'Undo' });
+  undo.addEventListener('click', () => {
+    removed.forEach(({ i, h }) => page.hotspots.splice(Math.min(i, page.hotspots.length), 0, h));
+    persist();
+    if (currentPage().hotspots === page.hotspots) { state.selected = removed.length === 1 ? first.i : -1; renderStage(); }
+    renderRail();
+    setStatus(removed.length === 1 ? 'Restored the hotspot.' : `Restored ${removed.length} hotspots.`);
+  });
+  $('status').append(undo);
 }
 
 function field(labelText, input) { return el('label', { className: 'f' }, labelText, input); }
@@ -1384,7 +1935,7 @@ function renderInspector() {
   if (state.multi.size > 1) { renderMultiInspector(body, p); return; }
   const h = p?.hotspots[state.selected];
   if (!h) {
-    body.append(el('p', { className: 'hint', textContent: p?.hotspots.length ? 'Select a box to check or fix it. Drag to move, drag the corner to resize, or use the arrow keys (Shift + arrows resizes). Shift-click boxes to select several.' : 'Generate this page, or use Draw box to add hotspots by hand.' }));
+    body.append(el('p', { className: 'hint', textContent: p?.hotspots.length ? 'Select a box to check or fix it. Drag to move it, drag any corner to resize it, or use the arrow keys (Shift + arrows resizes). × on the box or the Delete key removes it. Shift-click boxes to select several.' : 'Generate this page, or use Draw box to add hotspots by hand.' }));
     if (p?.hotspots.length > 1 && !state.example) {
       const all = el('button', { className: 'btn', type: 'button', textContent: 'Select all on this page' });
       all.addEventListener('click', () => { state.multi = new Set(p.hotspots.map((_, i) => i)); state.selected = -1; renderStage(); });
@@ -1401,10 +1952,6 @@ function renderInspector() {
   description.addEventListener('change', () => edit((x) => { x.description = description.value.trim(); }));
   const skus = el('input', { type: 'text', value: h.skus.join(', '), id: 'iSkus', className: 'mono' });
   skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); }));
-  const ftype = el('select', { id: 'iFtype' }, ...['search', 'brand', 'category'].map((t) => el('option', { value: t, textContent: t[0].toUpperCase() + t.slice(1), selected: h.fallback.type === t })));
-  ftype.addEventListener('change', () => edit((x) => { x.fallback.type = ftype.value; }));
-  const fval = el('input', { type: 'text', value: h.fallback.value, id: 'iFval' });
-  fval.addEventListener('change', () => edit((x) => { x.fallback.value = fval.value.trim(); }));
   const conf = el('select', { id: 'iConf' }, el('option', { value: 'high', textContent: 'High', selected: h.confidence === 'high' }), el('option', { value: 'low', textContent: 'Check', selected: h.confidence === 'low' }));
   conf.addEventListener('change', () => edit((x) => { x.confidence = conf.value; }));
   const reviewed = el('input', { type: 'checkbox', id: 'iReviewed', checked: !!h.reviewed });
@@ -1434,9 +1981,9 @@ function renderInspector() {
           const ids = linked ? (h.offerIds || []).filter((id) => id !== f.id) : [...(h.offerIds || []), f.id];
           edit((x) => linkToEntries(x, ids));
         });
-        const name = `${f.entry.brand || f.offer.brand} ${f.entry.desc}`;
+        const name = `${makerOf(f.entry, f.offer)} ${f.entry.desc}`;
         const priced = f.entry.retail || f.entry.sale ? f.entry : f.offer;
-        const price = [priced.retail && `reg ${priced.retail}`, priced.sale && `sale ${priced.sale}`].filter(Boolean).join(', ');
+        const price = priceNote(priced);
         return el('li', {}, el('span', { textContent: name }), el('span', { className: 'sub', textContent: [`p. ${f.offer.pages.join('/') || '?'}`, price, `${f.entry.skus.length} SKU${f.entry.skus.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') }), use);
       }) : [el('li', { className: 'sub', textContent: 'No close items in the list.' })]));
     };
@@ -1452,13 +1999,15 @@ function renderInspector() {
   if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
+  if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No SKU yet, so this box is marked to check. Add SKUs${mcp ? ' (Find in AS400 below, ' : ' ('}the item list, or by hand), or tick Reviewed to let the importer find the product by its name and price.` }));
   body.append(
     field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('SKUs (comma separated)', skus),
     el('label', { className: 'check' }, inStore, ' In store only (no online link)'),
     ...suggestionBlock(),
-    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${o.brand} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.objectIds?.length ? `. No SKU in the sheet; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
-    el('div', { className: 'two' }, field('Fallback link', ftype), field('Confidence', conf)),
-    field(h.fallback.type === 'brand' ? 'Brand' : h.fallback.type === 'category' ? 'Category' : 'Search for', fval),
+    ...lookupBlock(h, edit),
+    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${makerOf(o)} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.objectIds?.length ? `. No SKU in the item list; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
+    ...linkFields(h, edit),
+    field('Confidence', conf),
     el('div', { className: 'mono', textContent: `x ${h.box.x}  y ${h.box.y}  w ${h.box.w}  h ${h.box.h}` }),
   );
   if (!state.example) {
@@ -1475,8 +2024,77 @@ function renderInspector() {
     body.append(fill);
   }
   const del = el('button', { className: 'btn', type: 'button', textContent: 'Delete this hotspot' });
-  del.addEventListener('click', () => { p.hotspots.splice(state.selected, 1); state.selected = -1; persist(); renderStage(); renderRail(); });
+  del.addEventListener('click', () => deleteHotspots([state.selected]));
   body.append(del);
+}
+
+/**
+ * The fields of a hotspot's link for when no product is found (see toLink): what kind of page it
+ * opens, then that kind's fields. Edits mark the link as set by hand, so linking item-list entries
+ * no longer replaces it.
+ */
+function linkFields(h, edit) {
+  const link = h.fallback;
+  const kind = linkKindOf(h);
+  const editLink = (fn) => edit((x) => { fn(x.fallback); x.linkEdited = true; });
+  const kindSelect = el('select', { id: 'iLinkKind' }, ...LINK_KINDS.map(([value, text]) => el('option', { value, textContent: text, selected: value === kind })));
+  kindSelect.addEventListener('change', () => edit((x) => { x.linkKind = kindSelect.value; x.linkEdited = true; x.fallback = forKind(x.fallback, kindSelect.value); }));
+  const text = (key, id, props = {}) => {
+    const input = el('input', { type: 'text', id, value: link[key] || '', ...props });
+    input.addEventListener('change', () => editLink((l) => {
+      const value = input.value.trim();
+      if (value) l[key] = key === 'urlSlug' ? normalizeUrl(value) : value; else delete l[key];
+    }));
+    return input;
+  };
+  const flag = (key, id, label) => {
+    const box = el('input', { type: 'checkbox', id, checked: !!link[key] });
+    box.addEventListener('change', () => editLink((l) => { if (box.checked) l[key] = true; else delete l[key]; }));
+    return el('label', { className: 'check' }, box, ` ${label}`);
+  };
+  const out = [el('div', { className: 'sublabel', textContent: 'Link when no product is found' }), field('Opens', kindSelect)];
+  if (kind === 'url') {
+    out.push(field('URL slug', text('urlSlug', 'iUrlSlug', { placeholder: '/stores, or https://www.youtube.com/watch?v=…' })), flag('newPage', 'iNewPage', 'Open in a new tab'));
+  } else if (kind === 'content') {
+    out.push(field('Page ID', text('pageID', 'iPageId', { className: 'mono', placeholder: 'hunting-guide' })), field('Anchor (optional)', text('anchor', 'iAnchor')));
+  } else {
+    out.push(
+      field('Category key (optional)', text('category', 'iCategory', { className: 'mono', placeholder: 'boots, as in /c/boots' })),
+      ...attributeRows(link, editLink),
+      flag('onSale', 'iOnSale', 'On sale only'),
+      field('Search term (used when there is no category or filter)', text('searchTerm', 'iSearchTerm', { placeholder: h.label })),
+    );
+  }
+  out.push(el('p', { className: 'hint', textContent: describeLink(link, h.label) }));
+  return out;
+}
+
+/** The link's attribute filters (brand, gender, …), one row each, as the link partial's Attribute Refinements. */
+function attributeRows(link, editLink) {
+  const rows = (link.attributes || []).map((a, i) => {
+    const name = el('input', { type: 'text', value: a.attributeName, placeholder: 'brand' });
+    name.setAttribute('list', 'linkAttrNames');
+    name.setAttribute('aria-label', `Filter ${i + 1}: attribute`);
+    name.addEventListener('change', () => editLink((l) => { l.attributes[i].attributeName = name.value.trim(); }));
+    const value = el('input', { type: 'text', value: a.attributeValue, placeholder: 'Sitka' });
+    value.setAttribute('aria-label', `Filter ${i + 1}: value`);
+    value.addEventListener('change', () => editLink((l) => { l.attributes[i].attributeValue = value.value.trim(); }));
+    const remove = el('button', { className: 'linkbtn', type: 'button', textContent: 'Remove' });
+    remove.setAttribute('aria-label', `Remove filter ${i + 1}`);
+    remove.addEventListener('click', () => editLink((l) => { l.attributes.splice(i, 1); if (!l.attributes.length) delete l.attributes; }));
+    return el('div', { className: 'attr' }, name, value, remove);
+  });
+  const add = el('button', { className: 'btn', type: 'button', textContent: 'Add a filter' });
+  add.addEventListener('click', () => {
+    editLink((l) => { l.attributes = [...(l.attributes || []), { attributeName: '', attributeValue: '' }]; });
+    [...$('inspector').querySelectorAll('.attr input')].at(-2)?.focus();
+  });
+  return [
+    el('div', { className: 'sublabel', textContent: 'Filters' }),
+    ...rows,
+    el('p', { className: 'hint', textContent: 'An attribute and its value, e.g. brand Sitka or gender Women. Separate several values with | (Sitka|Kuiu).' }),
+    add,
+  ];
 }
 
 /** Several hotspots picked: list them, with deleting them all at once. */
@@ -1490,10 +2108,7 @@ function renderMultiInspector(body, p) {
   const del = el('button', { className: 'btn', type: 'button', textContent: `Delete ${picked.length} hotspots`, disabled: state.example });
   del.addEventListener('click', () => {
     if (!confirming) { confirming = true; del.textContent = `Click again to delete ${picked.length} hotspots`; return; }
-    picked.slice().reverse().forEach((i) => p.hotspots.splice(i, 1));
-    state.multi = new Set(); state.selected = -1;
-    persist(); renderStage(); renderRail();
-    setStatus(`Deleted ${picked.length} hotspots.`);
+    deleteHotspots(picked);
   });
   const clear = el('button', { className: 'btn', type: 'button', textContent: 'Clear selection' });
   clear.addEventListener('click', () => { state.multi = new Set(); renderStage(); });
@@ -1534,6 +2149,7 @@ function updateButtons() {
   $('genBtn').disabled = !ready || state.busy;
   $('genPageBtn').disabled = !ready || state.busy;
   $('matchBtn').disabled = state.example || state.busy || !state.offers.length || !sheet.confirmed;
+  $('lookupBtn').disabled = state.example || state.busy;
   $('tidyBtn').disabled = state.example || state.busy;
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
@@ -1548,6 +2164,7 @@ const pctPoint = (ev) => { const r = sheetEl.getBoundingClientRect(); return { x
 
 sheetEl.addEventListener('pointerdown', (ev) => {
   const p = currentPage(); if (!p?.url) return;
+  if (ev.target.closest('.hsdel')) return;
   const boxEl = ev.target.closest('.hs');
   const pt = pctPoint(ev);
   if (state.drawing && !boxEl) {
@@ -1563,7 +2180,8 @@ sheetEl.addEventListener('pointerdown', (ev) => {
     if (idx !== state.selected) state.listQuery = '';
     state.selected = idx;
     const h = p.hotspots[idx];
-    drag = { mode: ev.target.classList.contains('grip') ? 'resize' : 'move', idx, start: pt, orig: { ...h.box }, moved: false };
+    const grip = ev.target.closest('.grip');
+    drag = { mode: grip ? 'resize' : 'move', corner: grip?.classList[1] || 'se', idx, start: pt, orig: { ...h.box }, moved: false };
   } else { state.selected = -1; state.multi = new Set(); renderStage(); return; }
   sheetEl.setPointerCapture(ev.pointerId);
   ev.preventDefault();
@@ -1580,9 +2198,18 @@ sheetEl.addEventListener('pointermove', (ev) => {
   if (Math.abs(dx) + Math.abs(dy) > 0.3) drag.moved = true;
   const h = currentPage().hotspots[drag.idx], o = drag.orig;
   if (drag.mode === 'move') { h.box.x = round1(clamp(o.x + dx, 0, 100 - o.w)); h.box.y = round1(clamp(o.y + dy, 0, 100 - o.h)); }
-  else { h.box.w = round1(clamp(o.w + dx, 1, 100 - o.x)); h.box.h = round1(clamp(o.h + dy, 1, 100 - o.y)); }
+  else {
+    // The dragged corner moves; the opposite one stays put.
+    const corner = drag.corner;
+    if (corner.includes('e')) h.box.w = round1(clamp(o.w + dx, 1, 100 - o.x));
+    if (corner.includes('s')) h.box.h = round1(clamp(o.h + dy, 1, 100 - o.y));
+    if (corner.includes('w')) { const x = clamp(o.x + dx, 0, o.x + o.w - 1); h.box.x = round1(x); h.box.w = round1(o.x + o.w - x); }
+    if (corner.includes('n')) { const y = clamp(o.y + dy, 0, o.y + o.h - 1); h.box.y = round1(y); h.box.h = round1(o.y + o.h - y); }
+  }
   const boxEl = sheetEl.querySelector(`.hs[data-idx="${drag.idx}"]`);
   if (boxEl) Object.assign(boxEl.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
+  const delEl = sheetEl.querySelector('.hsdel');
+  if (delEl) placeDelete(delEl, h.box);
 });
 sheetEl.addEventListener('pointerup', (ev) => {
   if (!drag) return;
@@ -1592,7 +2219,7 @@ sheetEl.addEventListener('pointerup', (ev) => {
     const x = clamp(Math.min(pt.x, drag.start.x), 0, 100), y = clamp(Math.min(pt.y, drag.start.y), 0, 100);
     const w = Math.abs(pt.x - drag.start.x), h = Math.abs(pt.y - drag.start.y);
     if (w > 2 && h > 2) {
-      p.hotspots.push({ label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: { type: 'search', value: '' }, confidence: 'high', note: '', locked: true });
+      p.hotspots.push({ label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: {}, confidence: 'high', note: '', locked: true });
       state.selected = p.hotspots.length - 1;
       state.drawing = false; updateButtons();
       if (!state.example) {
@@ -1612,6 +2239,14 @@ sheetEl.addEventListener('keydown', (ev) => {
   const idx = Number(boxEl.dataset.idx), h = currentPage().hotspots[idx];
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.shiftKey) { toggleMulti(idx); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
   if (ev.key === 'Enter' || ev.key === ' ') { state.multi = new Set(); state.selected = idx; renderStage(); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
+  if (ev.key === 'Delete' || ev.key === 'Backspace') {
+    ev.preventDefault();
+    deleteHotspots([idx]);
+    // Focus the box that took its place (or the one before), so the keyboard stays on the page.
+    const boxes = sheetEl.querySelectorAll('.hs');
+    boxes[Math.min(idx, boxes.length - 1)]?.focus();
+    return;
+  }
   const step = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[ev.key];
   if (!step) return;
   ev.preventDefault();
@@ -1666,31 +2301,52 @@ function flyerData() {
       imageName: imageName(d.campaign, i),
       hotspots: p.hotspots.map((h) => ({
         label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
-        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: h.fallback, inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: h.confidence,
+        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
       })),
     })),
   };
 }
+/** Shows what a save is doing over the whole Studio, with a bar when `total` is given; null closes it. */
+function exportProgress(text, done = 0, total = null) {
+  const dialog = $('savingDlg');
+  if (text === null) { if (dialog.open) dialog.close(); return; }
+  $('savingText').textContent = text;
+  const bar = $('savingBar');
+  bar.hidden = total === null;
+  if (total) { bar.max = total; bar.value = done; }
+  if (!dialog.open) dialog.showModal();
+}
+// Escape would close the overlay while the save carries on underneath.
+$('savingDlg').addEventListener('cancel', (ev) => ev.preventDefault());
 async function save(filename, data) {
+  // The viewer confirms each download, which can sit unanswered behind another window.
+  exportProgress('Waiting for you to confirm the download…');
   try { await downloads.save({ filename, data }); setStatus(`Saved ${filename}.`); }
   catch (e) { setStatus(e?.code === 'declined' ? 'Save cancelled.' : `Could not save ${filename}.`, e?.code !== 'declined'); }
 }
-$('exportJsonBtn').addEventListener('click', () => save(`flyer-${readDetails().campaign}.json`, JSON.stringify(flyerData(), null, 2)));
-$('exportBtn').addEventListener('click', async () => {
-  const d = readDetails();
+/** Runs a save under the saving overlay, with the buttons off, however it ends. */
+async function saving(title, work) {
+  $('savingTitle').textContent = title;
   state.busy = true; updateButtons();
+  try { await work(); }
+  finally { exportProgress(null); state.busy = false; updateButtons(); }
+}
+$('exportJsonBtn').addEventListener('click', () => saving('Saving flyer data', () => save(`flyer-${readDetails().campaign}.json`, JSON.stringify(flyerData(), null, 2))));
+$('exportBtn').addEventListener('click', () => saving('Saving images + flyer data', async () => {
+  const d = readDetails();
+  const total = state.pages.length;
   try {
     const zip = new JSZip();
-    for (let i = 0; i < state.pages.length; i++) {
-      setStatus(`Preparing page image ${i + 1} of ${state.pages.length}…`);
+    for (let i = 0; i < total; i++) {
+      exportProgress(`Preparing page image ${i + 1} of ${total}…`, i, total);
       zip.file(`${imageName(d.campaign, i)}.jpg`, await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86));
     }
     zip.file(`flyer-${d.campaign}.json`, JSON.stringify(flyerData(), null, 2));
-    setStatus('Compressing…');
-    await save(`flyer-${d.campaign}.zip`, await zip.generateAsync({ type: 'blob' }));
+    exportProgress('Compressing…', 0, 100);
+    const blob = await zip.generateAsync({ type: 'blob' }, (m) => exportProgress(`Compressing… ${Math.floor(m.percent)}%`, m.percent, 100));
+    await save(`flyer-${d.campaign}.zip`, blob);
   } catch { setStatus('The images could not be prepared.', true); }
-  finally { state.busy = false; updateButtons(); }
-});
+}));
 
 // ---------- guide ----------
 const guide = $('guide');
@@ -1705,7 +2361,9 @@ renderRail(); renderStage(); updateButtons();
 setStatus('Open a flyer PDF to begin. Pages without products are fine: Claude returns none for them.');
 (async () => {
   if (!window.claude?.use) { claudeState = 'no-runtime'; updateButtons(); return; }
-  [sample, downloads] = await Promise.all([claude.use('sample'), claude.use('downloads')]);
+  [sample, downloads, mcp] = await Promise.all([claude.use('sample'), claude.use('downloads'), claude.use('mcp')]);
+  $('adBtn').hidden = !mcp;
+  $('lookupBtn').hidden = !mcp;
   if (sample) {
     const limits = await sample.limits().catch(() => null);
     claudeState = limits?.images ? 'ready' : 'text-only';

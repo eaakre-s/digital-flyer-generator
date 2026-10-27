@@ -2,7 +2,8 @@
 
     python3 studio/build.py
 Then publish studio/flyer-studio.html to https://claude.ai/artifact/LZKiFFQj8WEiLuP8osgyRH with
-capabilities {"sample": {"images": true}, "downloads": true}.
+capabilities {"sample": {"images": true}, "downloads": true,
+"mcp": {"servers": [{"server": "Claude IBMi Developer Tools", "tools": ["execute_sql"]}]}}.
 """
 import json
 import re
@@ -13,7 +14,7 @@ hotspots = json.loads((here / 'example-p26.hotspots.json').read_text())['hotspot
 for h in hotspots:
     brand = h.get('brand', '')
     rest = re.sub('^' + re.escape(brand) + r'\s*', '', h['label'], flags=re.I)
-    h['fallback'] = {'type': 'search', 'value': (brand + ' ' + rest).strip()}
+    h['fallback'] = {'searchTerm': (brand + ' ' + rest).strip()}
     h['locked'] = False
 page = (here / 'template.html').read_text()
 page = page.replace('__EXAMPLE_IMG__', (here / 'example-p26.datauri').read_text().strip())

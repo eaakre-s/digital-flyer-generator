@@ -4,6 +4,8 @@
  * `searchTerm` is the flyer's own addition, used only when nothing more specific is set.
  */
 
+import { categoryUrl } from './urlRules';
+
 export interface LinkAttribute {
   attributeName: string;
   attributeValue: string;
@@ -45,9 +47,6 @@ export const linkKind = (link: FallbackLink): LinkKind => {
   return 'products';
 };
 
-/** Attribute names the site turns into path segments; others become `?r=` refinements. */
-export const PATH_ATTRIBUTES = ['brand', 'gender', 'team', 'promo', 'vendorcollection'];
-
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
 /**
@@ -87,48 +86,8 @@ export const brandOf = (link: FallbackLink) =>
   link.attributes?.find((a) => a.attributeName.toLowerCase() === 'brand')?.attributeValue ?? '';
 
 // ---------- the site's URL for a link ----------
-// Mirrors buildCategoryUrl and LinkContent in customer-scheels amplience-link.tsx, so the preview
-// shows what the site will open. Keep the two in step.
-
-const capitalizeWords = (value: string) =>
-  value
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-
-function categoryUrl(link: FallbackLink): string {
-  let url = link.category ? `/c/${link.category}/` : '/c/all/';
-  const attributes = link.attributes?.length ? link.attributes : undefined;
-  if (link.onSale && !attributes) url += 'sale/';
-  if (!attributes) return url;
-
-  const find = (name: string) => attributes.find((a) => a.attributeName.toLowerCase() === name);
-  const prefix: Record<string, string> = { team: 't/', brand: 'b/', vendorcollection: 'vc/' };
-  for (const key of ['gender', 'promo', 'team', 'brand', 'vendorcollection']) {
-    const attribute = find(key);
-    if (attribute) url += `${prefix[key] ?? ''}${attribute.attributeValue.toLowerCase().replace(/\|/g, '_')}/`;
-  }
-  if (link.onSale) url += 'sale/';
-
-  const special = ['srule', 'pmin', 'pmax'];
-  const lowercase = ['promotionalsale'];
-  const refinements: string[] = [];
-  for (const a of attributes) {
-    const name = a.attributeName.toLowerCase();
-    if (PATH_ATTRIBUTES.includes(name) || special.includes(name) || lowercase.includes(name)) continue;
-    refinements.push(`${a.attributeName}%3A${capitalizeWords(a.attributeValue).replace(/\|/g, '%7C')}`);
-  }
-  for (const name of lowercase) {
-    const a = find(name);
-    if (a) refinements.push(`${a.attributeName}%3A${a.attributeValue}`);
-  }
-  if (refinements.length) url += `?r=${refinements.join('%3B')}`;
-  const params = special.map(find).filter((a): a is LinkAttribute => !!a);
-  params.forEach((a, i) => {
-    url += `${refinements.length || i > 0 ? '&' : '?'}${a.attributeName}=${a.attributeValue}`;
-  });
-  return url;
-}
+// Mirrors LinkContent in customer-scheels amplience-link.tsx, so the preview shows what the site
+// will open; category and filter links are laid out by the site's URL rules (see urlRules.ts).
 
 /**
  * Where a hotspot's fallback goes: a site path, or a full URL for another site. An empty link
@@ -146,11 +105,6 @@ export function linkPath(link: FallbackLink, label: string): string {
     url = `/search?q=${encodeURIComponent(target.searchTerm)}`;
   else {
     url = categoryUrl(target);
-    // Several product ids (objectIDs joined by |) list just those products.
-    if (target.productID?.includes('|')) {
-      const param = `objectID%3A${target.productID.split('|').join('%7C')}`;
-      url += url.includes('?r=') ? `%3B${param}` : `${url.includes('?') ? '&' : '?'}r=${param}`;
-    }
     if (target.anchor) url += `#${target.anchor}`;
   }
   return url.replace(/\/(?=[?#]|$)/, '');

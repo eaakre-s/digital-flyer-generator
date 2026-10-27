@@ -294,6 +294,13 @@
       ul.hslist .num { min-width: 20px; font-size: 12px; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
       ul.hslist button.hint .num { color: var(--accent); }
       ul.hslist .name { flex: 1; }
+      ul.hslist li { display: flex; align-items: center; }
+      ul.hslist li[draggable="true"] { cursor: grab; }
+      ul.hslist li.dragging { opacity: 0.5; }
+      ul.hslist li.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+      ul.hslist li.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+      ul.hslist .handle { padding-left: 8px; color: var(--ink-3); font-size: 12px; letter-spacing: -2px; user-select: none; }
+      ul.hslist li:not([draggable="true"]) .handle { display: none; }
       ul.linked, ul.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
       ul.results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 4px 6px; border-radius: 2px; }
       ul.results li:hover { background: var(--panel); }

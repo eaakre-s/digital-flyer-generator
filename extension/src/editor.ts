@@ -7,11 +7,11 @@ import {
   isExternalUrl,
   linkKind,
   linkPath,
-  PATH_ATTRIBUTES,
   toFallbackLink,
   type FallbackLink,
   type LinkKind,
 } from './link';
+import { linkAttributeNames, loadUrlRules, urlRulesLoaded } from './urlRules';
 
 /**
  * Edits the flyer already saved on the item: page images with their hotspots drawn on top. Boxes can
@@ -397,6 +397,8 @@ function renderFallback(hotspot: Hotspot) {
   group.append(field('Button text (optional)', buttonText));
 
   updatePreview();
+  // Category and filter links are laid out by the site's URL rules, which may still be loading.
+  if (!urlRulesLoaded()) void loadUrlRules().then(() => preview.isConnected && updatePreview());
   // Amplience's sandbox can block new tabs, so the link can also be copied and pasted into one.
   const copy = el('button', { type: 'button', className: 'link', textContent: 'Copy link' });
   const manual = el('input', { type: 'text', readOnly: true, className: 'copyfield', hidden: true }) as HTMLInputElement;
@@ -439,7 +441,7 @@ function renderProductsLink(
   group.append(linkField('Category key', 'category', 'e.g. boots'));
 
   const filters = el('div', { className: 'filters' });
-  const names = el('datalist', { id: 'edAttrNames' }, ...PATH_ATTRIBUTES.map((n) => el('option', { value: n })));
+  const names = el('datalist', { id: 'edAttrNames' }, ...linkAttributeNames().map((n) => el('option', { value: n })));
   (link.attributes ?? []).forEach((attribute, i) => {
     const name = input(attribute.attributeName, 'name', (v) => (attribute.attributeName = v), `edAttr${i}`);
     name.setAttribute('list', 'edAttrNames');
@@ -527,7 +529,20 @@ function renderInspector() {
       }),
     );
     if (list.length) {
+      const ro = deps.readOnly();
+      const sort = el('button', { type: 'button', className: 'link', textContent: 'Sort in reading order', disabled: ro || list.length < 2 });
+      sort.addEventListener('click', () => {
+        const sorted = readingOrder(list);
+        if (sorted.every((h, i) => h === list[i])) return;
+        list.splice(0, list.length, ...sorted);
+        changed();
+        render();
+      });
       panel.append(
+        el('p', {
+          className: 'muted',
+          textContent: 'This order is the order keyboard users tab through the hotspots on scheels.com. Drag a hotspot to move it.',
+        }),
         el(
           'ul',
           { className: 'hslist' },
@@ -541,9 +556,12 @@ function renderInspector() {
             );
             pick.addEventListener('click', () => select(i));
             pick.dataset.idx = String(i);
-            return el('li', {}, pick);
+            const item = el('li', {}, el('span', { className: 'handle', ariaHidden: 'true', textContent: '⋮⋮' }), pick);
+            if (!ro) reorderable(item, i);
+            return item;
           }),
         ),
+        sort,
       );
     }
     return;
@@ -593,6 +611,77 @@ function renderInspector() {
     changed();
   });
   panel.append(el('div', { className: 'group' }, del));
+}
+
+// ---------- hotspot order ----------
+// A page's hotspots are tabbed through on the site in the order they are saved, so the list in the
+// panel can be reordered: by dragging, or all at once into reading order.
+
+let dragFrom = -1;
+
+function moveHotspot(from: number, to: number) {
+  const list = hotspots();
+  if (from === to || to < 0 || to >= list.length) return;
+  const [moved] = list.splice(from, 1);
+  list.splice(to, 0, moved);
+  changed();
+  render();
+}
+
+/** Lets a hotspot's row in the list be dragged above or below another row. */
+function reorderable(item: HTMLElement, index: number) {
+  item.draggable = true;
+  const clear = () => item.classList.remove('drop-before', 'drop-after');
+  item.addEventListener('dragstart', (ev) => {
+    dragFrom = index;
+    item.classList.add('dragging');
+    ev.dataTransfer?.setData('text/plain', String(index));
+    if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
+  });
+  item.addEventListener('dragover', (ev) => {
+    if (dragFrom < 0) return;
+    ev.preventDefault();
+    const rect = item.getBoundingClientRect();
+    const after = ev.clientY > rect.top + rect.height / 2;
+    item.classList.toggle('drop-after', after);
+    item.classList.toggle('drop-before', !after);
+  });
+  item.addEventListener('dragleave', clear);
+  item.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const after = item.classList.contains('drop-after');
+    clear();
+    const from = dragFrom;
+    dragFrom = -1;
+    // Dropping below a later row lands one place earlier once the dragged row is taken out.
+    const to = index + (after ? 1 : 0) - (from < index + (after ? 1 : 0) ? 1 : 0);
+    moveHotspot(from, to);
+  });
+  item.addEventListener('dragend', () => {
+    dragFrom = -1;
+    item.classList.remove('dragging');
+    clear();
+  });
+}
+
+/**
+ * Hotspots top to bottom, left to right: each row starts at the highest remaining box and takes
+ * every box whose middle is above the bottom of the shortest box starting level with it, so a tall
+ * box beside a row of short ones does not pull the next row in.
+ */
+function readingOrder(list: Hotspot[]): Hotspot[] {
+  const rest = [...list].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
+  const out: Hotspot[] = [];
+  while (rest.length) {
+    const first = rest[0];
+    const level = rest.filter((h) => h.box.y < first.box.y + first.box.h / 2);
+    const rowBottom = Math.min(...level.map((h) => h.box.y + h.box.h));
+    const row = rest.filter((h) => h.box.y + h.box.h / 2 <= rowBottom || h === first);
+    row.sort((a, b) => a.box.x - b.box.x);
+    out.push(...row);
+    for (const h of row) rest.splice(rest.indexOf(h), 1);
+  }
+  return out;
 }
 
 function render() {
@@ -774,6 +863,7 @@ let wired = false;
 /** Shows the editor for `pages` (the field's current value). */
 export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
   deps = editorDeps;
+  void loadUrlRules();
   state.pages = structuredClone(pages).map((page) => ({
     ...page,
     hotspots: (page.hotspots ?? []).map((h) => ({
