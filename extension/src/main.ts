@@ -35,6 +35,8 @@ const state: {
 };
 let sdk: Sdk;
 let media = DEFAULT_MEDIA;
+// The Link & Value Generator's address, from the installation parameters (this code is public).
+let linkGeneratorUrl = '';
 
 function setMessage(text: string, kind: 'info' | 'error' | 'ok' = 'info') {
   const el = $('message');
@@ -51,7 +53,12 @@ async function showCurrent() {
     : 'This item has no pages yet.';
   ($('importer') as HTMLDetailsElement).open = !pages.length;
   $('importerSummary').textContent = pages.length ? 'Replace with a new Flyer Studio export' : 'Import from Flyer Studio';
-  openEditor(pages, { write: writePages, readOnly: () => state.readOnly, resize: () => sdk.frame.setHeight() });
+  openEditor(pages, {
+    write: writePages,
+    readOnly: () => state.readOnly,
+    resize: () => sdk.frame.setHeight(),
+    linkGeneratorUrl: linkGeneratorUrl || undefined,
+  });
 }
 
 async function writePages(pages: FlyerPage[]): Promise<string | null> {
@@ -254,8 +261,9 @@ function setReadOnly(readOnly: boolean) {
 async function start() {
   const framed = window.parent !== window;
   sdk = framed ? await init<ContentFieldExtension<FlyerPage[]>>() : (devSdk() as unknown as Sdk);
-  const installation = (sdk.params?.installation ?? {}) as Partial<MediaSettings> & { studioUrl?: string };
+  const installation = (sdk.params?.installation ?? {}) as Partial<MediaSettings> & { studioUrl?: string; linkGeneratorUrl?: string };
   if (installation.studioUrl) ($('studioLink') as HTMLAnchorElement).href = installation.studioUrl;
+  linkGeneratorUrl = installation.linkGeneratorUrl ?? '';
   media = {
     endpoint: installation.endpoint || DEFAULT_MEDIA.endpoint,
     defaultHost: installation.defaultHost || DEFAULT_MEDIA.defaultHost,

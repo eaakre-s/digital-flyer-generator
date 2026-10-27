@@ -12,6 +12,8 @@ import {
   type LinkKind,
 } from './link';
 import { linkAttributeNames, loadUrlRules, urlRulesLoaded } from './urlRules';
+import { categoryName, findCategories, loadCategories, type Category } from './categories';
+import { filterValues, linkCount } from './facets';
 
 /**
  * Edits the flyer already saved on the item: page images with their hotspots drawn on top. Boxes can
@@ -25,6 +27,8 @@ interface EditorDeps {
   readOnly: () => boolean;
   /** Tells Amplience the frame's content height changed (an image finishing loading is not a DOM change). */
   resize: () => void;
+  /** The Link & Value Generator, from the extension's installation parameters (kept out of this public code). */
+  linkGeneratorUrl?: string;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -324,7 +328,35 @@ function renderFallback(hotspot: Hotspot) {
     title: 'If clicking does not open it, right-click and choose Open Link in New Tab',
   }) as HTMLAnchorElement;
   let buttonText: HTMLInputElement | undefined;
+  // How many products a category or filter link lists, so a link to nothing is caught before saving.
+  const count = el('p', { className: 'muted count' });
+  count.setAttribute('aria-live', 'polite');
+  let counting = 0;
+  const updateCount = () => {
+    const current = toFallbackLink(link);
+    const lists = kind === 'products' && !!(current.category || current.attributes?.length || current.onSale);
+    count.hidden = !lists;
+    if (!lists) return;
+    const run = ++counting;
+    count.textContent = 'Counting products…';
+    count.classList.remove('warn');
+    window.setTimeout(async () => {
+      if (run !== counting) return;
+      const n = await linkCount(current, await categoryName(current.category)).catch(() => undefined);
+      if (run !== counting || !count.isConnected) return;
+      count.textContent =
+        n === undefined
+          ? 'Could not count the products.'
+          : n === null
+            ? 'No product count for this category: Scheels Search files it under a name it could not match.'
+            : n === 0
+              ? 'No products match this link. Check the category and filters.'
+              : `About ${n.toLocaleString()} product${n === 1 ? '' : 's'} on scheels.com.`;
+      count.classList.toggle('warn', n === 0);
+    }, 400);
+  };
   const updatePreview = () => {
+    updateCount();
     if (buttonText) buttonText.placeholder = defaultButtonText(toFallbackLink(link), hotspot.label);
     const path = linkPath(toFallbackLink(link), hotspot.label);
     preview.replaceChildren(path, el('span', { ariaHidden: 'true', textContent: ' ↗' }), el('span', { className: 'sr', textContent: ' (opens in a new tab)' }));
@@ -375,7 +407,7 @@ function renderFallback(hotspot: Hotspot) {
   });
   group.append(el('h4', { textContent: 'Link when no product' }), field('Link to', kindSelect));
 
-  if (kind === 'products') renderProductsLink(hotspot, link, group, input, checkbox, linkField);
+  if (kind === 'products') renderProductsLink(hotspot, link, group, input, checkbox, linkField, edited);
   else if (kind === 'url') {
     group.append(
       linkField('URL slug', 'urlSlug', 'e.g. /stores or https://www.youtube.com/watch?v=…'),
@@ -418,8 +450,113 @@ function renderFallback(hotspot: Hotspot) {
   group.append(
     el('p', { className: 'preview' }, el('span', { className: 'muted', textContent: 'Opens ' }), preview, ' ', copy),
     manual,
+    count,
   );
   return group;
+}
+
+/**
+ * The link's category: a slug typed straight in, or a category picked by name from the Scheels list
+ * (data/categories.csv). The chosen category's name shows under the field; a slug the list does not
+ * have is flagged.
+ */
+function categoryField(link: FallbackLink, edited: () => void) {
+  const box = el('input', {
+    type: 'text',
+    id: 'edCategory',
+    value: link.category ?? '',
+    placeholder: 'Search by name, e.g. hiking boots',
+    autocomplete: 'off',
+    disabled: deps.readOnly(),
+  }) as HTMLInputElement;
+  const list = el('ul', { id: 'edCategoryList', className: 'combo', hidden: true });
+  list.setAttribute('role', 'listbox');
+  box.setAttribute('role', 'combobox');
+  box.setAttribute('aria-autocomplete', 'list');
+  box.setAttribute('aria-controls', list.id);
+  box.setAttribute('aria-expanded', 'false');
+  const note = el('p', { className: 'muted small', id: 'edCategoryNote' });
+  box.setAttribute('aria-describedby', note.id);
+  let options: Category[] = [];
+  let active = -1;
+
+  const describe = async () => {
+    const slug = link.category ?? '';
+    const name = slug ? await categoryName(slug) : undefined;
+    note.textContent = !slug ? '' : name ? name : 'Not in the Scheels category list: check the preview opens a page.';
+    note.classList.toggle('warn', !!slug && !name);
+  };
+  const close = () => {
+    list.hidden = true;
+    box.setAttribute('aria-expanded', 'false');
+    box.removeAttribute('aria-activedescendant');
+    active = -1;
+  };
+  const highlight = (i: number) => {
+    active = i;
+    [...list.children].forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
+    box.setAttribute('aria-activedescendant', `edCategoryOpt${i}`);
+    list.children[i]?.scrollIntoView({ block: 'nearest' });
+  };
+  const choose = (category: Category) => {
+    box.value = category.slug;
+    link.category = category.slug;
+    close();
+    describe();
+    edited();
+  };
+  const suggest = async () => {
+    const typed = box.value.trim();
+    const found = typed ? findCategories(await loadCategories(), typed) : [];
+    if (box.value.trim() !== typed) return; // typed on while the list loaded
+    options = found;
+    list.replaceChildren(
+      ...options.map((category, i) => {
+        const item = el(
+          'li',
+          { id: `edCategoryOpt${i}` },
+          el('span', { textContent: category.name }),
+          el('span', { className: 'slug', textContent: category.slug }),
+        );
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', 'false');
+        // Picking must not blur the field first, which would close the list under the pointer.
+        item.addEventListener('mousedown', (ev) => ev.preventDefault());
+        item.addEventListener('click', () => choose(category));
+        return item;
+      }),
+    );
+    list.hidden = !options.length;
+    box.setAttribute('aria-expanded', String(options.length > 0));
+    active = -1;
+  };
+
+  box.addEventListener('input', () => {
+    const value = box.value.trim();
+    if (value) link.category = value;
+    else delete link.category;
+    edited();
+    describe();
+    suggest();
+  });
+  box.addEventListener('keydown', (ev) => {
+    if (list.hidden || !options.length) return;
+    if (ev.key === 'ArrowDown') highlight((active + 1) % options.length);
+    else if (ev.key === 'ArrowUp') highlight(active <= 0 ? options.length - 1 : active - 1);
+    else if (ev.key === 'Enter' && active >= 0) choose(options[active]);
+    else if (ev.key === 'Escape') close();
+    else return;
+    ev.preventDefault();
+  });
+  box.addEventListener('blur', close);
+  describe();
+  return el(
+    'div',
+    { className: 'f' },
+    el('label', { htmlFor: box.id, textContent: 'Category' }),
+    el('div', { className: 'combobox' }, box, list),
+    note,
+  );
 }
 
 const LINK_KINDS: [LinkKind, string][] = [
@@ -436,9 +573,10 @@ function renderProductsLink(
   input: (value: string, placeholder: string, onInput: (v: string) => void, id?: string) => HTMLInputElement,
   checkbox: (label: string, key: 'onSale' | 'newPage', checked: boolean) => HTMLElement,
   linkField: (label: string, key: 'category' | 'searchTerm', placeholder: string) => HTMLElement,
+  edited: () => void,
 ) {
   const ro = deps.readOnly();
-  group.append(linkField('Category key', 'category', 'e.g. boots'));
+  group.append(categoryField(link, edited));
 
   const filters = el('div', { className: 'filters' });
   const names = el('datalist', { id: 'edAttrNames' }, ...linkAttributeNames().map((n) => el('option', { value: n })));
@@ -448,6 +586,16 @@ function renderProductsLink(
     name.setAttribute('aria-label', `Filter ${i + 1} name`);
     const value = input(attribute.attributeValue, 'value', (v) => (attribute.attributeValue = v));
     value.setAttribute('aria-label', `Filter ${i + 1} value`);
+    // The values this filter takes in Scheels Search, with product counts, given the rest of the link.
+    const values = el('datalist', { id: `edAttrValues${i}` });
+    value.setAttribute('list', values.id);
+    value.addEventListener('focus', async () => {
+      if (!attribute.attributeName.trim()) return;
+      const found = await filterValues(attribute.attributeName.trim(), link, await categoryName(link.category), i).catch(() => []);
+      values.replaceChildren(
+        ...found.map(({ value: v, count: n }) => el('option', { value: v, label: `${n} product${n === 1 ? '' : 's'}` })),
+      );
+    });
     const remove = el('button', { type: 'button', className: 'link', textContent: 'Remove', disabled: ro });
     remove.setAttribute('aria-label', `Remove filter ${i + 1}`);
     remove.addEventListener('click', () => {
@@ -456,7 +604,7 @@ function renderProductsLink(
       changed(hotspot);
       renderInspector();
     });
-    filters.append(el('div', { className: 'filter' }, name, value, remove));
+    filters.append(el('div', { className: 'filter' }, name, value, remove), values);
   });
   const add = el('button', { type: 'button', className: 'link', textContent: '+ Add filter', disabled: ro });
   add.addEventListener('click', () => {
@@ -472,6 +620,17 @@ function renderProductsLink(
     checkbox('On sale only', 'onSale', !!link.onSale),
     linkField('Search term (used only with no category or filter)', 'searchTerm', hotspot.label),
   );
+  if (deps.linkGeneratorUrl) {
+    group.append(
+      el(
+        'a',
+        { href: deps.linkGeneratorUrl, target: '_blank', rel: 'noopener noreferrer', className: 'small' },
+        'Open the Link & Value Generator',
+        el('span', { ariaHidden: 'true', textContent: ' ↗' }),
+        el('span', { className: 'sr', textContent: ' (opens in a new tab)' }),
+      ),
+    );
+  }
 
   // Category and brand from the products this hotspot links to, for when they go offline.
   const linked = (hotspot.objectIds ?? []).map((id) => state.products.get(id)).filter((c) => !!c);

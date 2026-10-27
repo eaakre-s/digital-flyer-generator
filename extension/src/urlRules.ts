@@ -225,8 +225,8 @@ const capitalizeWords = (value: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-/** The product listing URL a category or filter link opens, its filters laid out by the URL rules. */
-export function categoryUrl(link: FallbackLink): string {
+/** The filters a category or filter link sets, as the site reads them: refinements, toggles and query parameters. */
+export function linkRefinements(link: FallbackLink) {
   const refinementList: Record<string, string[]> = {};
   const toggle: Record<string, boolean> = {};
   const params: Record<string, string> = {};
@@ -237,6 +237,7 @@ export function categoryUrl(link: FallbackLink): string {
   if (link.onSale) toggle[`pricing.groups.${CUSTOMER_GROUP}.onSale`] = true;
 
   for (const { attributeName, attributeValue } of link.attributes ?? []) {
+    if (!attributeName || !attributeValue) continue;
     const name = attributeName.toLowerCase();
     if (LINK_QUERY_PARAMS.includes(name)) {
       params[name] = attributeValue;
@@ -267,8 +268,16 @@ export function categoryUrl(link: FallbackLink): string {
   // Several product IDs list just those products.
   if (link.productID?.includes('|')) add('objectID', link.productID.split('|'));
 
-  return buildFilterUrl({ route: `/c/${link.category || 'all'}`, refinementList, toggle, params }, rules);
+  return { refinementList, toggle, params };
 }
+
+/** The product listing URL a category or filter link opens, its filters laid out by the URL rules. */
+export function categoryUrl(link: FallbackLink): string {
+  return buildFilterUrl({ route: `/c/${link.category || 'all'}`, ...linkRefinements(link) }, rules);
+}
+
+/** The search refinement key a link attribute filters on: brand, attributes.gender, … */
+export const refinementKeyOf = (attributeName: string) => linkAttributeToRefinementKey(attributeName, rules);
 
 /**
  * Attribute names a link can filter on, for suggestions: the URL rules' (brand, gender, team, …), then

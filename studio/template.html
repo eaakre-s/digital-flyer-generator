@@ -95,6 +95,12 @@ main.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .inspector .body{padding:0 12px 12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
 .inspector .hint{color:var(--ink-2);font-size:14px;margin:0}
+.inspector .hint.warn{color:var(--bad)}
+.combobox{position:relative}
+ul.combo{position:absolute;z-index:6;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow:auto;margin:0;padding:4px 0;list-style:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px var(--shadow);text-transform:none;letter-spacing:0;font-weight:500}
+ul.combo li{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;font-size:13px;color:var(--ink);cursor:pointer}
+ul.combo li:hover,ul.combo li[aria-selected="true"]{background:var(--panel-2)}
+ul.combo .slug{color:var(--ink-2);font-family:var(--mono);font-size:12px}
 .inspector .problems{margin:0;padding-left:18px;color:var(--bad);font-size:13px}
 .inspector .note{font-size:13px;color:var(--ink-2);background:var(--panel-2);border-radius:5px;padding:8px}
 .sublabel{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:4px}
@@ -397,6 +403,10 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
 (() => {
 const EXAMPLE_IMG = "__EXAMPLE_IMG__";
 const EXAMPLE_HOTSPOTS = __EXAMPLE_HOTSPOTS__;
+// [name, slug] for every Scheels category, from data/categories.csv (build.py), and the Link & Value
+// Generator's address (studio/local.json, kept out of the public repository; empty hides the link).
+const CATEGORIES = __CATEGORIES__;
+const LINK_GENERATOR_URL = __LINK_GENERATOR_URL__;
 const EXPORT_WIDTH = 1600;   // px width of exported page images
 const CLAUDE_WIDTH = 1100;   // px width of the image Claude looks at
 const PREVIEW_WIDTH = 1100;  // px width of the on-screen page
@@ -2107,14 +2117,99 @@ function linkFields(h, edit) {
     out.push(field('Page ID', text('pageID', 'iPageId', { className: 'mono', placeholder: 'hunting-guide' })), field('Anchor (optional)', text('anchor', 'iAnchor')));
   } else {
     out.push(
-      field('Category key (optional)', text('category', 'iCategory', { className: 'mono', placeholder: 'boots, as in /c/boots' })),
+      ...categoryPicker(link, editLink),
       ...attributeRows(link, editLink),
       flag('onSale', 'iOnSale', 'On sale only'),
       field('Search term (used when there is no category or filter)', text('searchTerm', 'iSearchTerm', { placeholder: h.label })),
     );
   }
   out.push(el('p', { className: 'hint', textContent: describeLink(link, h.label) }));
+  if (kind === 'products' && LINK_GENERATOR_URL) {
+    out.push(el('a', { className: 'hint', href: LINK_GENERATOR_URL, target: '_blank', rel: 'noopener noreferrer' }, 'Open the Link & Value Generator', el('span', { ariaHidden: 'true', textContent: ' ↗' }), el('span', { className: 'sr', textContent: ' (opens in a new tab)' })));
+  }
   return out;
+}
+
+const CATEGORY_NAMES = new Map(CATEGORIES.map(([name, slug]) => [slug, name]));
+const categoryWords = (text) => String(text).toLowerCase().replace(/&/g, ' and ').split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Categories whose name or slug has a word starting with each word typed, closest first: the exact
+ * name, then names starting with what was typed, then names of fewer words, alphabetically. Kept in step with the importer's
+ * extension/src/categories.ts.
+ */
+function findCategories(query, limit = 10) {
+  const typed = categoryWords(query);
+  if (!typed.length) return [];
+  const phrase = typed.join(' ');
+  const found = [];
+  for (const [name, slug] of CATEGORIES) {
+    const nameWords = categoryWords(name);
+    const all = [...nameWords, ...slug.split('-')];
+    if (!typed.every((t) => all.some((w) => w.startsWith(t)))) continue;
+    const joined = nameWords.join(' ');
+    found.push({ name, slug, rank: joined === phrase || slug === query.trim().toLowerCase() ? 0 : joined.startsWith(phrase) ? 1 : 2 });
+  }
+  return found.sort((a, b) => a.rank - b.rank || categoryWords(a.name).length - categoryWords(b.name).length || a.name.localeCompare(b.name)).slice(0, limit);
+}
+
+/**
+ * The link's category: a slug typed straight in, or a category picked by name from the Scheels list.
+ * The chosen category's name shows under the field; a slug the list does not have is flagged.
+ */
+function categoryPicker(link, editLink) {
+  const box = el('input', { type: 'text', id: 'iCategory', className: 'mono', value: link.category || '', placeholder: 'Search by name, e.g. hiking boots', autocomplete: 'off' });
+  const list = el('ul', { id: 'iCategoryList', className: 'combo', hidden: true });
+  list.setAttribute('role', 'listbox');
+  box.setAttribute('role', 'combobox');
+  box.setAttribute('aria-autocomplete', 'list');
+  box.setAttribute('aria-controls', list.id);
+  box.setAttribute('aria-expanded', 'false');
+  const name = CATEGORY_NAMES.get(link.category || '');
+  const note = el('p', { className: `hint${link.category && !name ? ' warn' : ''}`, id: 'iCategoryNote', textContent: !link.category ? '' : name || 'Not in the Scheels category list: check it opens a page on scheels.com.' });
+  box.setAttribute('aria-describedby', note.id);
+  let options = [];
+  let active = -1;
+  const commit = (slug) => {
+    if (slug === (link.category || '')) return;
+    editLink((l) => { if (slug) l.category = slug; else delete l.category; });
+    $('iCategory')?.focus();
+  };
+  const close = () => { list.hidden = true; box.setAttribute('aria-expanded', 'false'); box.removeAttribute('aria-activedescendant'); active = -1; };
+  const highlight = (i) => {
+    active = i;
+    [...list.children].forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
+    box.setAttribute('aria-activedescendant', `iCategoryOpt${i}`);
+    list.children[i]?.scrollIntoView({ block: 'nearest' });
+  };
+  const choose = (category) => { box.value = category.slug; close(); commit(category.slug); };
+  box.addEventListener('input', () => {
+    options = findCategories(box.value);
+    list.replaceChildren(...options.map((category, i) => {
+      const item = el('li', { id: `iCategoryOpt${i}` }, el('span', { textContent: category.name }), el('span', { className: 'slug', textContent: category.slug }));
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', 'false');
+      // Picking must not blur the field first, which would commit what was typed and close the list.
+      item.addEventListener('mousedown', (ev) => ev.preventDefault());
+      item.addEventListener('click', () => choose(category));
+      return item;
+    }));
+    list.hidden = !options.length;
+    box.setAttribute('aria-expanded', String(options.length > 0));
+    active = -1;
+  });
+  box.addEventListener('keydown', (ev) => {
+    if (list.hidden || !options.length) return;
+    if (ev.key === 'ArrowDown') highlight((active + 1) % options.length);
+    else if (ev.key === 'ArrowUp') highlight(active <= 0 ? options.length - 1 : active - 1);
+    else if (ev.key === 'Enter' && active >= 0) choose(options[active]);
+    else if (ev.key === 'Escape') close();
+    else return;
+    ev.preventDefault();
+  });
+  box.addEventListener('change', () => commit(box.value.trim()));
+  box.addEventListener('blur', close);
+  return [field('Category (optional)', el('div', { className: 'combobox' }, box, list)), note];
 }
 
 /** The link's attribute filters (brand, gender, …), one row each, as the link partial's Attribute Refinements. */
