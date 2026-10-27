@@ -3,7 +3,8 @@
     python3 studio/build.py
 Then publish studio/flyer-studio.html to https://claude.ai/artifact/LZKiFFQj8WEiLuP8osgyRH with
 capabilities {"sample": {"images": true}, "downloads": true,
-"mcp": {"servers": [{"server": "Claude IBMi Developer Tools", "tools": ["execute_sql"]}]}}.
+"mcp": {"servers": [{"server": "Claude IBMi Developer Tools", "tools": ["execute_sql"]}]},
+"db": {}, "room": {}, "assets": {}, "user": {"scopes": ["profile"]}}.
 """
 import json
 import re

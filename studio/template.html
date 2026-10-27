@@ -109,6 +109,18 @@ label.check input{width:16px;height:16px;accent-color:var(--red)}
 .attr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;align-items:center}
 .attr input{width:100%;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-size:14px}
 .sheetnote.err{color:var(--bad)}
+.people{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:13px;margin-top:8px}
+.person{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 2px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line)}
+.person img{width:20px;height:20px;border-radius:50%}
+.syncstate{font-size:12px;color:var(--ink-2);align-self:center}
+.syncstate.err{color:var(--bad);font-weight:600}
+.pagelist .who{display:block;font-size:11px;color:var(--ink-2)}
+ul.flyers{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.flyers li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 12px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+ul.flyers li[aria-current="true"]{border-color:var(--red)}
+ul.flyers .name{font-weight:700}
+ul.flyers .sub{grid-column:1;font-size:13px;color:var(--ink-2)}
+ul.flyers .acts{grid-column:2;grid-row:1/span 2;display:flex;gap:6px}
 .export{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px}
 .export p{margin:0;font-size:13px;color:var(--ink-2)}
 .export .exportwhy{color:var(--warn)}
@@ -163,9 +175,12 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="brand">
       <h1>Flyer <span>Studio</span></h1>
       <p>Turn a sale flyer PDF into shoppable hotspots for the Amplience Digital Flyer. Claude drafts the boxes; you check and fix them, then save the page images and flyer data.</p>
+      <div class="people" id="people" hidden></div>
     </div>
     <div class="files">
       <button class="btn" id="guideBtn" type="button" aria-haspopup="dialog">How to publish a flyer</button>
+      <button class="btn" id="flyersBtn" type="button" aria-haspopup="dialog" hidden>Shared flyers</button>
+      <span class="syncstate" id="syncState" role="status"></span>
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
       <button class="btn" id="sheetCols" type="button" aria-haspopup="dialog" hidden>Columns</button>
@@ -246,6 +261,19 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       <button class="btn primary" id="resetAll" type="button">Clear everything</button>
     </div>
     <p class="sheetnote"><b>Clear this flyer</b> removes the open PDF’s hotspots and the flyer details. <b>Clear everything</b> also removes every other flyer’s saved work and the remembered item list columns.</p>
+  </div>
+</dialog>
+
+<dialog class="guide colmap" id="flyersDlg" aria-labelledby="flyersTitle">
+  <div class="guidehead">
+    <h2 id="flyersTitle">Shared flyers</h2>
+    <button class="btn" id="flyersClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead">A shared flyer is worked on by the whole team at once: everyone sees the same pages and boxes, edits show up for others as they are made, and nobody needs the PDF. Sharing uploads the open PDF’s pages, your boxes and the item list.</p>
+    <div class="actions"><button class="btn primary" id="shareBtn" type="button">Share the open flyer with your team</button></div>
+    <p class="sheetnote" id="shareWhy" role="status"></p>
+    <ul class="flyers" id="flyersList"></ul>
   </div>
 </dialog>
 
@@ -354,6 +382,8 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
         <p>Preview the item and click a few hotspots: matched products open a product panel with price and add to cart. Then publish it, scheduled for the sale dates.</p>
       </li>
     </ol>
+    <h3 class="sub">Working on a flyer together</h3>
+    <p>Open the PDF, then <b>Shared flyers › Share the open flyer with your team</b>. Sharing uploads the pages, your boxes and the item list, and needs Editor access to Flyer Studio; teammates with Contributor access then open it from <b>Shared flyers</b>, without the PDF. Everyone sees the same boxes, and edits show up for the others as they are made (two people changing the same box: the last change wins). The page list shows who is on which page, and a page someone is generating is skipped by everyone else's Generate. The status beside the buttons says when everything is saved.</p>
     <h3 class="sub">Fixing a live flyer</h3>
     <p>Open the Digital Flyer item: the Pages field shows the saved flyer. Move or resize boxes, change a hotspot's products with <b>Find product</b>, or draw and delete boxes, then save the item. For a new proof from Creative, repeat steps 1 to 5 here and use <b>Replace with a new Flyer Studio export</b> in the item.</p>
   </div>
@@ -389,6 +419,7 @@ let claudeState = 'checking'; // checking | ready | text-only | no-runtime | una
 // ---------- persistence (per viewer convenience; work survives a reload of the same PDF) ----------
 const storeKey = () => state.file ? `flyer-studio:${state.file.name}:${state.file.size}` : null;
 function persist() {
+  if (shared.flyerId) { syncShared(); return; }
   const key = storeKey(); if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' })) }));
@@ -632,9 +663,10 @@ const colLetter = (i) => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : '') + St
 /** Re-links hotspots to the item list now in state.offers and shows it in the header. Returns its SKU count. */
 function showItemList() {
   if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
+  if (shared.flyerId && !shared.applying && sheet.confirmed && (state.offers.length || shared.offerChunks)) publishOffers();
   const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
   $('sheetName').textContent = !sheet.name ? 'None' : sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
-  $('sheetCols').hidden = sheet.source !== 'file';
+  $('sheetCols').hidden = sheet.source !== 'file' || !Object.keys(sheet.tabs).length;
   updateButtons();
   return skuCount;
 }
@@ -1250,6 +1282,7 @@ function offerLine(o) {
 // ---------- PDF ----------
 $('pdfInput').addEventListener('change', async (ev) => {
   const file = ev.target.files[0]; if (!file) return;
+  closeShared();
   setStatus(`Opening ${file.name}…`);
   try {
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
@@ -1259,7 +1292,7 @@ $('pdfInput').addEventListener('change', async (ev) => {
     const saved = restore();
     if (saved?.pages?.length === pdf.numPages) {
       saved.pages.forEach((p, i) => Object.assign(state.pages[i], {
-        hotspots: (p.hotspots || []).map((h) => ({ ...h, skus: (h.skus || []).map(normalizeSku), fallback: toLink(h.fallback, h.label) })),
+        hotspots: (p.hotspots || []).map((h) => ({ ...h, id: h.id || newId('h'), skus: (h.skus || []).map(normalizeSku), fallback: toLink(h.fallback, h.label) })),
         status: p.status || 'empty',
         error: p.error || (p.status === 'error' ? 'Generating this page failed in an earlier session. Generate it again.' : ''),
       }));
@@ -1278,6 +1311,7 @@ $('pdfInput').addEventListener('change', async (ev) => {
 });
 
 async function pageCanvas(i, width) {
+  if (!state.pdf) return imageCanvas(state.pages[i].url, width);
   const page = await state.pdf.getPage(i + 1);
   const base = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: width / base.width });
@@ -1292,6 +1326,7 @@ const toJpeg = (canvas, q) => new Promise((res) => canvas.toBlob(res, 'image/jpe
 async function textItems(i) {
   const p = state.pages[i];
   if (p.items) return p.items;
+  if (!state.pdf) return [];
   const page = await state.pdf.getPage(i + 1);
   const vp = page.getViewport({ scale: 1 });
   const content = await page.getTextContent();
@@ -1311,6 +1346,7 @@ async function textItems(i) {
 async function imageRegions(i) {
   const p = state.pages[i];
   if (p.regions) return p.regions;
+  if (!state.pdf) return [];
   const page = await state.pdf.getPage(i + 1);
   const vp = page.getViewport({ scale: 1 });
   const { fnArray, argsArray } = await page.getOperatorList();
@@ -1587,7 +1623,7 @@ function cleanHotspot(h, offersById) {
   const { brand, skus, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
   return {
-    label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
+    id: newId('h'), label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
     offerIds, skus, objectIds: styleIds, fallback, inStoreOnly,
@@ -1668,7 +1704,10 @@ function matchPageFromList(i) {
 
 async function generatePage(i, signal) {
   const p = state.pages[i];
+  const claim = shared.flyerId ? await claimPage(i) : null;
+  if (claim && !claim.acquired) return { code: 'claimed' };
   p.status = 'working'; p.error = ''; renderRail(); if (i === state.current) renderStage();
+  persist();
   try {
     const items = await textItems(i);
     const regions = await imageRegions(i).catch(() => []);
@@ -1681,7 +1720,7 @@ async function generatePage(i, signal) {
     const offersById = offerIndex(state.offers);
     const fresh = (Array.isArray(result?.hotspots) ? result.hotspots : []).map((h) => cleanHotspot(h, offersById)).filter((h) => h.label);
     tidyBoxes(fresh.map((h) => h.box), locked.map((h) => h.box), items);
-    p.hotspots = [...locked, ...fresh];
+    p.hotspots.splice(0, p.hotspots.length, ...locked, ...fresh);
     p.status = 'done';
     if (i === state.current) { state.selected = -1; state.multi = new Set(); }
     return null;
@@ -1690,6 +1729,7 @@ async function generatePage(i, signal) {
     p.error = e?.code === 'cancelled' ? '' : `${sampleError(e)}${e?.code ? ` (${e.code})` : ''}`;
     return e;
   } finally {
+    claim?.release();
     persist(); renderRail(); if (i === state.current) renderStage(); updateExport();
   }
 }
@@ -1710,7 +1750,7 @@ async function runBatch(indices) {
   if (!sample || state.busy) return;
   state.busy = true; state.abort = new AbortController();
   $('stopBtn').hidden = false; updateButtons();
-  let done = 0, failed = 0;
+  let done = 0, failed = 0, claimed = 0;
   for (const i of indices) {
     if (state.abort.signal.aborted) break;
     setStatus(`Generating page ${i + 1} (${done + failed + 1} of ${indices.length})… Claude takes about half a minute per page.`);
@@ -1718,12 +1758,13 @@ async function runBatch(indices) {
     if (err?.code === 'images_unavailable') { claudeState = 'text-only'; updateButtons(); err = await generatePage(i, state.abort.signal); }
     if (!err) { done++; continue; }
     if (err.code === 'cancelled') break;
+    if (err.code === 'claimed') { claimed++; continue; }
     failed++;
     if (STOP_BATCH.has(err.code)) { setStatus(sampleError(err), true); break; }
   }
   const stopped = state.abort.signal.aborted;
   state.busy = false; state.abort = null; $('stopBtn').hidden = true; updateButtons();
-  if (!$('status').classList.contains('err')) setStatus(`${stopped ? 'Stopped. ' : ''}Generated ${done} page${done === 1 ? '' : 's'}${failed ? `; ${failed} failed (marked in the list)` : ''}.`);
+  if (!$('status').classList.contains('err')) setStatus(`${stopped ? 'Stopped. ' : ''}Generated ${done} page${done === 1 ? '' : 's'}${failed ? `; ${failed} failed (marked in the list)` : ''}${claimed ? `; skipped ${claimed} someone else was generating` : ''}.`);
 }
 
 $('genBtn').addEventListener('click', () => {
@@ -1857,7 +1898,8 @@ function renderRail() {
   }
   state.pages.forEach((p, i) => {
     const [kind, text] = pageSummary(p);
-    const b = el('button', { type: 'button' }, el('span', { className: 'pn', textContent: String(i + 1) }), el('span', { textContent: i === 0 ? 'Cover' : `Page ${i + 1}` }), el('span', { className: 'st' }, el('span', { className: `chip ${kind}`, textContent: text })));
+    const here = pageWho(i);
+    const b = el('button', { type: 'button' }, el('span', { className: 'pn', textContent: String(i + 1) }), el('span', {}, i === 0 ? 'Cover' : `Page ${i + 1}`, ...(here ? [el('span', { className: 'who', textContent: here })] : [])), el('span', { className: 'st' }, el('span', { className: `chip ${kind}`, textContent: text })));
     b.setAttribute('aria-current', String(i === state.current));
     if (p.status === 'error' && p.error) b.title = p.error;
     b.addEventListener('click', () => showPage(i));
@@ -1895,7 +1937,7 @@ function renderStage() {
   // (a button inside the box's own button role would hide it from screen readers).
   const picked = p.hotspots[state.selected];
   if (picked && !state.multi.size) {
-    const del = el('button', { type: 'button', className: 'hsdel', textContent: '×', title: 'Delete this hotspot (Delete key)' });
+    const del = el('button', { type: 'button', className: 'hsdel', textContent: '×', title: 'Delete this hotspot (Delete key)', hidden: readOnly() });
     del.setAttribute('aria-label', `Delete hotspot ${state.selected + 1}`);
     placeDelete(del, picked.box);
     del.addEventListener('click', () => deleteHotspots([state.selected]));
@@ -1930,6 +1972,12 @@ function deleteHotspots(indices) {
 function field(labelText, input) { return el('label', { className: 'f' }, labelText, input); }
 
 function renderInspector() {
+  // A remote change re-renders the page; the panel waits while someone is typing in it.
+  if (shared.skipInspector) return;
+  renderInspectorBody();
+  if (readOnly()) $('inspector').querySelectorAll('input, select, textarea, button').forEach((n) => { n.disabled = true; });
+}
+function renderInspectorBody() {
   const body = $('inspector'); body.replaceChildren();
   const p = currentPage();
   if (state.multi.size > 1) { renderMultiInspector(body, p); return; }
@@ -2128,6 +2176,7 @@ async function showPage(i) {
   if (state.example) return;
   state.multi = new Set();
   state.current = clamp(i, 0, state.pages.length - 1); state.selected = -1;
+  setPresence();
   renderRail(); renderStage(); updateButtons();
   const target = state.current;
   try { await ensurePreview(target); } catch { setStatus(`Page ${target + 1} could not be drawn.`, true); }
@@ -2137,7 +2186,7 @@ $('prevBtn').addEventListener('click', () => showPage(state.current - 1));
 $('nextBtn').addEventListener('click', () => showPage(state.current + 1));
 
 function updateButtons() {
-  const ready = !state.example && !!sample && sheet.confirmed;
+  const ready = !state.example && !!sample && sheet.confirmed && !readOnly();
   const hints = {
     checking: 'Connecting to Claude\u2026',
     'no-runtime': 'Generate needs the page opened on claude.ai.',
@@ -2149,8 +2198,10 @@ function updateButtons() {
   $('genBtn').disabled = !ready || state.busy;
   $('genPageBtn').disabled = !ready || state.busy;
   $('matchBtn').disabled = state.example || state.busy || !state.offers.length || !sheet.confirmed;
-  $('lookupBtn').disabled = state.example || state.busy;
-  $('tidyBtn').disabled = state.example || state.busy;
+  $('lookupBtn').disabled = state.example || state.busy || readOnly();
+  $('tidyBtn').disabled = state.example || state.busy || readOnly();
+  $('drawBtn').disabled = readOnly();
+  $('matchBtn').disabled ||= readOnly();
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
   $('drawBtn').setAttribute('aria-pressed', String(state.drawing));
@@ -2165,6 +2216,11 @@ const pctPoint = (ev) => { const r = sheetEl.getBoundingClientRect(); return { x
 sheetEl.addEventListener('pointerdown', (ev) => {
   const p = currentPage(); if (!p?.url) return;
   if (ev.target.closest('.hsdel')) return;
+  if (readOnly()) {
+    const pick = ev.target.closest('.hs');
+    state.multi = new Set(); state.selected = pick ? Number(pick.dataset.idx) : -1; renderStage();
+    return;
+  }
   const boxEl = ev.target.closest('.hs');
   const pt = pctPoint(ev);
   if (state.drawing && !boxEl) {
@@ -2219,7 +2275,7 @@ sheetEl.addEventListener('pointerup', (ev) => {
     const x = clamp(Math.min(pt.x, drag.start.x), 0, 100), y = clamp(Math.min(pt.y, drag.start.y), 0, 100);
     const w = Math.abs(pt.x - drag.start.x), h = Math.abs(pt.y - drag.start.y);
     if (w > 2 && h > 2) {
-      p.hotspots.push({ label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: {}, confidence: 'high', note: '', locked: true });
+      p.hotspots.push({ id: newId('h'), label: '', priceText: '', brand: '', box: { x: round1(x), y: round1(y), w: round1(clamp(w, 1, 100 - x)), h: round1(clamp(h, 1, 100 - y)) }, textItemIds: [], skus: [], fallback: {}, confidence: 'high', note: '', locked: true });
       state.selected = p.hotspots.length - 1;
       state.drawing = false; updateButtons();
       if (!state.example) {
@@ -2231,6 +2287,7 @@ sheetEl.addEventListener('pointerup', (ev) => {
     }
   } else if (drag.moved) { p.hotspots[drag.idx].locked = true; }
   drag = null;
+  shared.refreshAfterDrag = false;
   persist(); renderStage(); renderRail();
   if (state.selected >= 0) $('iLabel')?.focus({ preventScroll: true });
 });
@@ -2239,6 +2296,7 @@ sheetEl.addEventListener('keydown', (ev) => {
   const idx = Number(boxEl.dataset.idx), h = currentPage().hotspots[idx];
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.shiftKey) { toggleMulti(idx); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
   if (ev.key === 'Enter' || ev.key === ' ') { state.multi = new Set(); state.selected = idx; renderStage(); sheetEl.querySelector(`.hs[data-idx="${idx}"]`)?.focus(); ev.preventDefault(); return; }
+  if (readOnly()) return;
   if (ev.key === 'Delete' || ev.key === 'Backspace') {
     ev.preventDefault();
     deleteHotspots([idx]);
@@ -2339,7 +2397,7 @@ $('exportBtn').addEventListener('click', () => saving('Saving images + flyer dat
     const zip = new JSZip();
     for (let i = 0; i < total; i++) {
       exportProgress(`Preparing page image ${i + 1} of ${total}…`, i, total);
-      zip.file(`${imageName(d.campaign, i)}.jpg`, await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86));
+      zip.file(`${imageName(d.campaign, i)}.jpg`, state.pdf ? await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86) : await (await fetch(state.pages[i].url)).blob());
     }
     zip.file(`flyer-${d.campaign}.json`, JSON.stringify(flyerData(), null, 2));
     exportProgress('Compressing…', 0, 100);
@@ -2356,11 +2414,438 @@ $('guideBtn2').addEventListener('click', openGuide);
 $('guideClose').addEventListener('click', () => guide.close());
 guide.addEventListener('click', (ev) => { if (ev.target === guide) guide.close(); });
 
+// ---------- shared flyers ----------
+// A flyer shared with the team lives in this artifact's database rather than one browser: a document
+// for the flyer (details, item list name), one per page (its uploaded image, the PDF's text positions
+// and photo regions, generate status, and who is generating it) and one per hotspot, so people editing
+// different boxes never overwrite each other; on the same box the last edit wins. The item list is
+// stored in chunks. Page images are uploaded once by whoever shares the flyer (uploading needs Editor
+// access), so everyone else works without the PDF. Presence shows who has the flyer open, and where.
+const shared = {
+  db: null, assets: null, user: null, room: null, me: '', tab: '', canWrite: null,
+  flyerId: '', flyer: null, flyers: [], readOnly: false, applying: false, skipInspector: false, refreshAfterDrag: false,
+  unsubscribe: [], peers: [], names: new Map(), hotspotDocs: null, offerChunks: 0, error: '',
+  synced: new Map(),   // write key → JSON of what the store holds, as far as this view knows
+  queue: new Map(),    // write key → its write chain, while a write is queued or running
+  running: 0, waiting: [],
+};
+const SHARED_KEY = 'flyer-studio:shared';
+const MAX_WRITES = 6;            // writes in flight at once; more are queued
+const CLAIM_MS = 60000;          // a page claim, renewed every half of it while Claude works on the page
+const OFFER_CHUNK_BYTES = 180000; // under the store's 256 KiB per document
+const SYNC_ERRORS = {
+  invalid_argument: 'you can view this flyer but not change it',
+  resource_exhausted: 'too many changes at once; they will be saved with your next change',
+  quota_exceeded: 'the shared flyers are full. Delete flyers you no longer need',
+  revoked: 'your access to this flyer changed. Reload the page',
+  unavailable: 'the connection dropped; they will be saved with your next change',
+};
+const newId = (prefix) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const pageId = (n) => `p${String(n).padStart(3, '0')}`;
+const flyerPath = (...rest) => ['flyers', shared.flyerId, ...rest].join('/');
+const readOnly = () => !!shared.flyerId && shared.readOnly;
+
+async function imageCanvas(url, width) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = Math.round((img.naturalHeight * width) / img.naturalWidth);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/** Runs a store call when fewer than MAX_WRITES are in flight. */
+function limited(task) {
+  return new Promise((resolve, reject) => {
+    const start = () => { shared.running++; task().then(resolve, reject).finally(() => { shared.running--; shared.waiting.shift()?.(); }); };
+    if (shared.running < MAX_WRITES) start(); else shared.waiting.push(start);
+  });
+}
+
+/**
+ * Writes `data` to `path` (null deletes it; `merge` updates the fields given) unless the store already
+ * holds it. Writes under one key run one after another.
+ */
+function write(key, path, data, merge = false) {
+  const json = data === null ? null : JSON.stringify(data);
+  if (shared.synced.get(key) === json) return;
+  shared.synced.set(key, json);
+  const ref = shared.db.doc(path);
+  const chain = (shared.queue.get(key) || Promise.resolve())
+    .then(() => limited(() => (data === null ? ref.delete() : merge ? ref.update(data) : ref.set(data))))
+    .then(() => { shared.error = ''; })
+    .catch((e) => syncFailed(e, key))
+    .finally(() => { if (shared.queue.get(key) === chain) shared.queue.delete(key); updateSyncState(); });
+  shared.queue.set(key, chain);
+  updateSyncState();
+}
+
+function syncFailed(e, key) {
+  shared.synced.delete(key); // written again with the next change
+  shared.error = SYNC_ERRORS[e?.code] || SYNC_ERRORS.unavailable;
+  if (e?.code === 'invalid_argument' && shared.canWrite !== true) { shared.readOnly = true; updateButtons(); renderStage(); }
+}
+
+function updateSyncState() {
+  const node = $('syncState');
+  node.classList.toggle('err', !!shared.error);
+  node.textContent = !shared.flyerId ? '' : shared.error ? `Changes not saved: ${shared.error}.` : readOnly() ? 'View only' : shared.queue.size ? 'Saving…' : 'All changes saved';
+}
+
+/** Writes what changed on this flyer since the store last had it: details, page status, hotspots. */
+function syncShared() {
+  if (!shared.flyerId || shared.readOnly) return;
+  // Details are written only once the flyer's own have arrived, so empty fields never overwrite them.
+  if (shared.flyer) {
+    const d = readDetails();
+    write(`${flyerPath()}#details`, flyerPath(), { title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate }, true);
+  }
+  const present = new Set();
+  state.pages.forEach((p, page) => {
+    write(`${flyerPath('pages', pageId(page))}#status`, flyerPath('pages', pageId(page)), { status: p.status, error: p.error || '' }, true);
+    p.hotspots.forEach((h, order) => {
+      if (!h.id) h.id = newId('h');
+      const key = flyerPath('hotspots', h.id);
+      present.add(key);
+      const { id, ...fields } = h;
+      write(key, key, { ...fields, page, order });
+    });
+  });
+  for (const key of shared.synced.keys()) {
+    if (key.startsWith(flyerPath('hotspots', '')) && !present.has(key) && shared.synced.get(key) !== null) write(key, key, null);
+  }
+}
+
+/** The item list, in chunks under the document size limit, and its name on the flyer. */
+function publishOffers() {
+  const chunks = [];
+  let chunk = [], size = 0;
+  for (const o of state.offers) {
+    const n = JSON.stringify(o).length;
+    if (chunk.length && size + n > OFFER_CHUNK_BYTES) { chunks.push(chunk); chunk = []; size = 0; }
+    chunk.push(o); size += n;
+  }
+  if (chunk.length) chunks.push(chunk);
+  chunks.forEach((offers, n) => { const path = flyerPath('offers', `c${n}`); write(path, path, { n, offers }); });
+  for (let n = chunks.length; n < shared.offerChunks; n++) { const path = flyerPath('offers', `c${n}`); write(path, path, null); }
+  shared.offerChunks = chunks.length;
+  write(`${flyerPath()}#itemList`, flyerPath(), { itemList: { name: sheet.name, source: sheet.source, count: state.offers.length } }, true);
+}
+
+/**
+ * Claims a page while generating it, so two people never generate the same page. The claim is a
+ * lease on the page's document that lapses on its own, renewed while Claude works.
+ */
+async function claimPage(n) {
+  const ref = shared.db.doc(flyerPath('pages', pageId(n)));
+  const take = () => ref.acquire({ holder: shared.tab, ttlMs: CLAIM_MS, data: { generatingBy: shared.me, generatingSince: Date.now() } });
+  // A store that cannot lease should not stop anyone generating.
+  const first = await take().catch(() => ({ acquired: true }));
+  if (!first.acquired) return { acquired: false };
+  const timer = setInterval(() => take().catch(() => {}), CLAIM_MS / 2);
+  return { acquired: true, release: () => { clearInterval(timer); ref.update({ generatingBy: '', generatingSince: 0 }).catch(() => {}); } };
+}
+
+/** Who is on page `n` and who is generating it, for the page list. */
+function pageWho(n) {
+  if (!shared.flyerId) return '';
+  const p = state.pages[n];
+  const name = (id) => shared.names.get(id) || 'Someone';
+  const generating = p?.generatingBy && p.generatingBy !== shared.me && p.generatingSince + CLAIM_MS * 2 > Date.now() ? `Generating · ${name(p.generatingBy)}` : '';
+  const here = [...new Set(shared.peers.filter((peer) => !peer.isMe && Number(peer.presence?.page) === n && !(generating && peer.by === p.generatingBy)).map((peer) => name(peer.by)))];
+  return [generating, here.join(', ')].filter(Boolean).join(' · ');
+}
+
+function setPresence() {
+  shared.room?.presence({ flyer: shared.flyerId || null, page: shared.flyerId ? state.current : null }).catch(() => {});
+}
+
+/** Everyone with this flyer open (each person's other tabs left out), with the page they are on. */
+async function renderPeople() {
+  const box = $('people');
+  const here = shared.flyerId ? shared.peers.filter((peer) => !(peer.isMe && !peer.sameTab)) : [];
+  box.hidden = here.length < 1;
+  if (!here.length) return;
+  const ids = [...new Set(here.map((peer) => peer.by).filter(Boolean))];
+  const profiles = shared.user && ids.length ? await shared.user.profiles(ids) : {};
+  for (const id of ids) if (profiles[id]?.name) shared.names.set(id, profiles[id].name);
+  box.replaceChildren(el('span', { textContent: 'Here now:' }), ...here.map((peer) => {
+    const profile = peer.by ? profiles[peer.by] : null;
+    const page = Number(peer.presence?.page);
+    const label = `${peer.isMe ? 'You' : profile?.name || 'Someone'}${Number.isInteger(page) ? ` · ${page === 0 ? 'cover' : `p. ${page + 1}`}` : ''}`;
+    return el('span', { className: 'person' }, ...(profile?.avatarUrl ? [el('img', { src: profile.avatarUrl, alt: '' })] : []), el('span', { textContent: label }));
+  }));
+  renderRail();
+}
+
+/** Re-renders after a change from someone else, without disturbing a drag or a field being typed in. */
+function refresh() {
+  if (drag) { shared.refreshAfterDrag = true; return; }
+  renderRail();
+  const active = document.activeElement;
+  shared.skipInspector = $('inspector').contains(active) && active.matches('input, textarea, select');
+  renderStage();
+  shared.skipInspector = false;
+  updateButtons();
+}
+
+function applyFlyer(snap) {
+  if (!snap.exists) { closeShared(); setStatus('That shared flyer was deleted.', true); renderAll(); return; }
+  const data = snap.data();
+  shared.flyer = data;
+  const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '' };
+  shared.synced.set(`${flyerPath()}#details`, JSON.stringify(details));
+  if (!['fTitle', 'fCampaign', 'fStart', 'fEnd'].includes(document.activeElement?.id)) writeDetails(details);
+  $('pdfName').textContent = `Shared · ${data.title || data.pdfName || 'flyer'} · ${data.pageCount || 0} pages`;
+  if (state.offers.length && data.itemList?.name && sheet.name !== data.itemList.name) {
+    shared.applying = true; sheet.name = data.itemList.name; showItemList(); shared.applying = false;
+  }
+  updateExport();
+}
+
+function applyPages(snap) {
+  const count = Math.max(shared.flyer?.pageCount || 0, ...snap.docs.map((d) => Number(d.data().n) + 1));
+  while (state.pages.length < count) state.pages.push({ hotspots: [], status: 'empty', error: '', items: null, regions: null, url: '' });
+  for (const d of snap.docs) {
+    const data = d.data(), n = Number(data.n), p = state.pages[n];
+    if (!p) continue;
+    if (data.image && !p.url) p.url = `/_blob/${data.image}`;
+    if (Array.isArray(data.items)) p.items = data.items;
+    if (Array.isArray(data.regions)) p.regions = data.regions;
+    p.generatingBy = data.generatingBy || '';
+    p.generatingSince = Number(data.generatingSince) || 0;
+    const key = `${flyerPath('pages', pageId(n))}#status`;
+    if (!shared.queue.has(key)) {
+      shared.synced.set(key, JSON.stringify({ status: data.status || 'empty', error: data.error || '' }));
+      // A page left "generating" by someone whose claim lapsed (a closed tab) is not being generated.
+      const stale = data.status === 'working' && !(p.generatingSince + CLAIM_MS * 2 > Date.now());
+      p.status = stale ? 'empty' : data.status || 'empty';
+      p.error = data.error || '';
+    }
+  }
+  if (shared.hotspotDocs) applyHotspots(shared.hotspotDocs, false);
+  refresh();
+}
+
+/** Merges the hotspot documents into the pages, keeping this view's own objects (and its unsent edits). */
+function applyHotspots(docs, render = true) {
+  shared.hotspotDocs = docs;
+  if (!state.pages.length) return;
+  const selectedId = currentPage()?.hotspots[state.selected]?.id;
+  const remote = new Map();
+  for (const d of docs) {
+    const data = d.data(), n = Number(data.page);
+    if (!remote.has(n)) remote.set(n, []);
+    remote.get(n).push({ id: d.id, data });
+  }
+  const live = new Set(docs.map((d) => flyerPath('hotspots', d.id)));
+  state.pages.forEach((p, n) => {
+    const mine = new Map(p.hotspots.map((h) => [h.id, h]));
+    const next = [];
+    for (const { id, data } of remote.get(n) || []) {
+      const key = flyerPath('hotspots', id);
+      const own = mine.get(id);
+      if (shared.queue.has(key)) { if (own) next.push([data.order, own]); continue; } // our write is on its way
+      const { page, order, ...fields } = data;
+      shared.synced.set(key, JSON.stringify(data));
+      if (own) {
+        const { id: _, ...current } = own;
+        if (JSON.stringify(current) !== JSON.stringify(fields)) { for (const k of Object.keys(own)) if (k !== 'id') delete own[k]; Object.assign(own, structuredClone(fields)); }
+        next.push([order, own]);
+      } else next.push([order, { id, ...structuredClone(fields) }]);
+    }
+    // Hotspots this view just added, not in the store's answer yet.
+    p.hotspots.forEach((h, i) => { if (shared.queue.has(flyerPath('hotspots', h.id)) && !next.some(([, x]) => x === h)) next.push([i, h]); });
+    next.sort((a, b) => a[0] - b[0]);
+    p.hotspots.splice(0, p.hotspots.length, ...next.map(([, h]) => h));
+  });
+  for (const key of [...shared.synced.keys()]) {
+    if (key.startsWith(flyerPath('hotspots', '')) && !live.has(key) && !shared.queue.has(key)) shared.synced.delete(key);
+  }
+  state.selected = selectedId ? currentPage().hotspots.findIndex((h) => h.id === selectedId) : -1;
+  if (state.multi.size) state.multi = new Set([...state.multi].filter((i) => i < currentPage().hotspots.length));
+  if (render) refresh();
+}
+
+function applyOffers(snap) {
+  shared.offerChunks = snap.size;
+  const offers = snap.docs.flatMap((d) => d.data().offers || []);
+  const list = shared.flyer?.itemList;
+  if (!offers.length && !list?.name) return;
+  shared.applying = true;
+  state.offers = offers;
+  Object.assign(sheet, { name: list?.name || 'Shared item list', source: list?.source === 'as400' ? 'as400' : 'shared', tabs: {}, tab: '', header: null, confirmed: true });
+  showItemList();
+  shared.applying = false;
+}
+
+function renderAll() { renderRail(); renderStage(); updateButtons(); renderPeople(); updateSyncState(); }
+
+/** Leaves the shared flyer that is open, if any; its pending writes still finish. */
+function closeShared() {
+  if (!shared.flyerId) return;
+  shared.unsubscribe.forEach((stop) => stop());
+  Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false });
+  shared.synced.clear();
+  try { localStorage.removeItem(SHARED_KEY); } catch {}
+  setPresence();
+  updateSyncState();
+}
+
+async function openSharedFlyer(id) {
+  closeShared();
+  state.pages.forEach((p) => p.url?.startsWith('blob:') && URL.revokeObjectURL(p.url));
+  Object.assign(state, { example: false, file: null, pdf: null, pages: [], current: 0, selected: -1, multi: new Set(), offers: [] });
+  Object.assign(sheet, { name: '', source: '', tabs: {}, tab: '', header: null, confirmed: true, chat: [] });
+  shared.flyerId = id;
+  shared.readOnly = shared.canWrite === false;
+  try { localStorage.setItem(SHARED_KEY, id); } catch {}
+  writeDetails({});
+  $('exampleBanner').hidden = true;
+  showItemList();
+  const failed = (e) => { shared.error = SYNC_ERRORS[e?.code] || SYNC_ERRORS.unavailable; updateSyncState(); };
+  shared.unsubscribe.push(
+    shared.db.doc(flyerPath()).onSnapshot(applyFlyer, failed),
+    shared.db.collection(flyerPath('pages')).orderBy('n').onSnapshot(applyPages, failed),
+    shared.db.collection(flyerPath('hotspots')).onSnapshot((snap) => applyHotspots(snap.docs), failed),
+    shared.db.collection(flyerPath('offers')).orderBy('n').onSnapshot(applyOffers, failed),
+  );
+  setPresence();
+  renderAll();
+  setStatus(readOnly() ? 'Opened the shared flyer. You can view it but not change it.' : 'Opened the shared flyer. Changes are saved for everyone as you make them.');
+}
+
+/** Uploads the open PDF's flyer (pages, text positions, boxes, item list) as a shared flyer, then opens it. */
+async function shareFlyer() {
+  if (!state.pdf || !shared.db || !shared.assets || state.busy) return;
+  const id = newId('f');
+  const base = `flyers/${id}`;
+  const d = readDetails();
+  const total = state.pages.length;
+  const offers = state.offers, list = { name: sheet.name, source: sheet.source };
+  $('flyersDlg').close();
+  $('savingTitle').textContent = 'Sharing this flyer';
+  state.busy = true; updateButtons();
+  try {
+    await shared.db.doc(base).set({ title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, pdfName: state.file?.name || '', pageCount: total, createdBy: shared.me, createdAt: Date.now(), ready: false });
+    for (let i = 0; i < total; i++) {
+      exportProgress(`Uploading page ${i + 1} of ${total}…`, i, total);
+      const p = state.pages[i];
+      const image = await shared.assets.upload(await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86), { type: 'image/jpeg' });
+      const items = await textItems(i);
+      const regions = await imageRegions(i).catch(() => []);
+      await shared.db.doc(`${base}/pages/${pageId(i)}`).set({ n: i, image: image.id, items, regions, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' });
+    }
+    exportProgress('Copying the hotspots…', 0, 1);
+    const writes = state.pages.flatMap((p, page) => p.hotspots.map((h, order) => {
+      if (!h.id) h.id = newId('h');
+      const { id: hid, ...fields } = h;
+      return () => shared.db.doc(`${base}/hotspots/${hid}`).set({ ...fields, page, order });
+    }));
+    let done = 0;
+    await Promise.all(writes.map((w) => limited(w).then(() => exportProgress(`Copying the hotspots… ${++done} of ${writes.length}`, done, writes.length))));
+    await shared.db.doc(base).update({ ready: true });
+    exportProgress(null);
+    await openSharedFlyer(id);
+    // Opening the shared flyer starts from its (still empty) item list; this flyer's goes up now.
+    if (offers.length) {
+      state.offers = offers;
+      Object.assign(sheet, { name: list.name, source: list.source === 'as400' ? 'as400' : 'shared', confirmed: true });
+      showItemList();
+    }
+    setStatus('Shared this flyer. Send teammates the Flyer Studio link and have them open it from Shared flyers.');
+  } catch (e) {
+    exportProgress(null);
+    const reason = { quota_or_state: 'the artifact’s storage is full', too_large: 'a page image is too large', rate_limited: 'too many uploads at once', quota_exceeded: 'the shared flyers are full', not_granted: 'uploading needs Editor access to Flyer Studio' }[e?.code];
+    setStatus(`The flyer could not be shared${reason ? `: ${reason}` : ''}. What was uploaded is listed under Shared flyers as incomplete; delete it there.`, true);
+  } finally {
+    state.busy = false; updateButtons();
+  }
+}
+
+/** Deletes a shared flyer for everyone: its documents and its page images. */
+async function deleteSharedFlyer(id) {
+  const base = `flyers/${id}`;
+  const wasOpen = shared.flyerId === id;
+  if (wasOpen) closeShared();
+  const collections = ['pages', 'hotspots', 'offers'];
+  const snaps = await Promise.all(collections.map((c) => shared.db.collection(`${base}/${c}`).get()));
+  const images = snaps[0].docs.map((d) => d.data().image).filter(Boolean);
+  const docs = snaps.flatMap((snap, k) => snap.docs.map((d) => `${base}/${collections[k]}/${d.id}`));
+  await Promise.all([
+    ...images.map((image) => limited(() => shared.assets.delete(image))),
+    ...docs.map((path) => limited(() => shared.db.doc(path).delete())),
+  ]);
+  await shared.db.doc(base).delete();
+  // The flyer that was open is gone: start again from the example page.
+  if (wasOpen) location.reload();
+}
+
+/** The list in the Shared flyers dialog. */
+async function renderFlyers() {
+  const ids = [...new Set(shared.flyers.map((f) => f.data.createdBy).filter(Boolean))];
+  const profiles = shared.user && ids.length ? await shared.user.profiles(ids) : {};
+  const canShare = !!state.pdf && !!shared.assets && !state.busy;
+  $('shareBtn').disabled = !canShare;
+  $('shareWhy').textContent = canShare ? '' : !state.pdf ? 'Open a flyer PDF to share it.' : !shared.assets ? 'Sharing a flyer uploads its pages, which needs Editor access to Flyer Studio. Ask its owner, or open a flyer someone shared below.' : '';
+  $('flyersList').replaceChildren(...(shared.flyers.length ? shared.flyers.map(({ id, data }) => {
+    const open = el('button', { className: 'btn primary', type: 'button', textContent: shared.flyerId === id ? 'Open now' : 'Open', disabled: shared.flyerId === id || !data.ready });
+    open.addEventListener('click', () => { $('flyersDlg').close(); openSharedFlyer(id); });
+    const acts = el('div', { className: 'acts' }, open);
+    if (shared.assets) {
+      let confirming = false;
+      const del = el('button', { className: 'btn', type: 'button', textContent: 'Delete' });
+      del.addEventListener('click', async () => {
+        if (!confirming) { confirming = true; del.textContent = 'Click again to delete for everyone'; return; }
+        del.disabled = true; del.textContent = 'Deleting…';
+        try { await deleteSharedFlyer(id); } catch { del.textContent = 'Could not delete'; }
+      });
+      acts.append(del);
+    }
+    const who = data.createdBy ? profiles[data.createdBy]?.name || 'Someone' : 'Someone';
+    const when = data.createdAt ? new Date(data.createdAt).toLocaleDateString() : '';
+    const item = el('li', {},
+      el('span', { className: 'name', textContent: data.title || data.pdfName || 'Untitled flyer' }),
+      acts,
+      el('span', { className: 'sub', textContent: [data.campaign, `${data.pageCount || 0} pages`, `shared by ${who}${when ? ` on ${when}` : ''}`, data.ready ? '' : 'upload incomplete'].filter(Boolean).join(' · ') }));
+    item.setAttribute('aria-current', String(shared.flyerId === id));
+    return item;
+  }) : [el('li', { className: 'sub', textContent: 'No shared flyers yet.' })]));
+}
+
+$('flyersBtn').addEventListener('click', () => { renderFlyers(); $('flyersDlg').showModal(); });
+$('flyersClose').addEventListener('click', () => $('flyersDlg').close());
+$('shareBtn').addEventListener('click', shareFlyer);
+
+/** Connects the shared store, presence and names, and reopens the shared flyer this browser had open. */
+async function startShared(db, assets, user, room) {
+  Object.assign(shared, { db, assets, user, room, tab: newId('t') });
+  if (!db) return;
+  shared.me = (await user?.id()) || '';
+  shared.canWrite = (await user?.can('data.write')) ?? null;
+  $('flyersBtn').hidden = false;
+  let reopen = '';
+  try { reopen = localStorage.getItem(SHARED_KEY) || ''; } catch {}
+  db.collection('flyers').orderBy('createdAt', 'desc').limit(100).onSnapshot((snap) => {
+    shared.flyers = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    if ($('flyersDlg').open) renderFlyers();
+    if (reopen && state.example && shared.flyers.some((f) => f.id === reopen && f.data.ready)) openSharedFlyer(reopen);
+    reopen = '';
+  }, () => {});
+  room?.onPeers((change) => {
+    shared.peers = change.peers.filter((peer) => peer.kind === 'viewer' && shared.flyerId && peer.presence?.flyer === shared.flyerId);
+    renderPeople();
+  }, () => {});
+}
+
 // ---------- start ----------
 renderRail(); renderStage(); updateButtons();
 setStatus('Open a flyer PDF to begin. Pages without products are fine: Claude returns none for them.');
 (async () => {
   if (!window.claude?.use) { claudeState = 'no-runtime'; updateButtons(); return; }
+  const [db, assets, user, room] = await Promise.all(['db', 'assets', 'user', 'room'].map((name) => claude.use(name)));
+  startShared(db, assets, user, room);
   [sample, downloads, mcp] = await Promise.all([claude.use('sample'), claude.use('downloads'), claude.use('mcp')]);
   $('adBtn').hidden = !mcp;
   $('lookupBtn').hidden = !mcp;
