@@ -6,9 +6,10 @@ import { fillFromProducts, linkPath } from './link';
 export type Matches = Match[][];
 
 /**
- * Hotspots that already carry SKUs (from the item list) are confirmed by SKU. Item-list items without SKUs
- * arrive with Scheels Search ids built from vendor number + style, which are looked up directly. The rest
- * are found by their printed name. In-store-only hotspots are left as they are.
+ * Hotspots that already carry SKUs (from the item list) are confirmed by SKU. Items without SKUs arrive with
+ * Scheels Search ids built from vendor number + style (from the item list, or typed into Studio's SKU field),
+ * which are looked up directly. The rest are found by their printed name. In-store-only hotspots are left as
+ * they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);

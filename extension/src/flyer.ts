@@ -50,11 +50,16 @@ const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
 // Spreadsheets drop a leading zero when a SKU cell is stored as a number: 4312505020 is SKU 04312505020.
 const normalizeSku = (sku: string) => (/^\d{10}$/.test(sku) ? `0${sku}` : sku);
+// Variant SKUs are all digits. Anything else typed into a SKU list is a product id (vendor number + style), which
+// is looked up like an item-list style id and swapped for that product's SKU.
+const SKU_PATTERN = /^\d{8,13}$/;
 
 function cleanHotspot(raw: any): Hotspot {
   const box = raw?.box ?? {};
   const x = clamp(Number(box.x) || 0, 0, 100);
   const y = clamp(Number(box.y) || 0, 0, 100);
+  const entered = Array.isArray(raw?.skus) ? raw.skus.map(text).filter(Boolean).map(normalizeSku) : [];
+  const objectIds = Array.isArray(raw?.objectIds) ? raw.objectIds.map(text).filter(Boolean) : [];
   return {
     label: text(raw?.label),
     priceText: text(raw?.priceText),
@@ -64,8 +69,8 @@ function cleanHotspot(raw: any): Hotspot {
       w: round1(clamp(Number(box.w) || 0, 0, 100 - x)),
       h: round1(clamp(Number(box.h) || 0, 0, 100 - y)),
     },
-    skus: Array.isArray(raw?.skus) ? raw.skus.map(text).filter(Boolean).map(normalizeSku) : [],
-    objectIds: Array.isArray(raw?.objectIds) ? raw.objectIds.map(text).filter(Boolean) : [],
+    skus: entered.filter((v: string) => SKU_PATTERN.test(v)),
+    objectIds: [...new Set([...objectIds, ...entered.filter((v: string) => !SKU_PATTERN.test(v))])],
     inStoreOnly: raw?.inStoreOnly === true,
     ...(text(raw?.description) ? { description: text(raw?.description) } : {}),
     ...(text(raw?.buttonText) ? { buttonText: text(raw?.buttonText) } : {}),
