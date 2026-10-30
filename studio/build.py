@@ -3,7 +3,8 @@
     python3 studio/build.py
 Then publish studio/flyer-studio.html to https://claude.ai/artifact/LZKiFFQj8WEiLuP8osgyRH with
 capabilities {"sample": {"images": true}, "downloads": true,
-"mcp": {"servers": [{"server": "Claude IBMi Developer Tools", "tools": ["execute_sql"]}]},
+"mcp": {"servers": [{"server": "Claude IBMi Developer Tools", "tools": ["execute_sql"]},
+{"server": "BigQuery", "tools": ["execute_sql_readonly"]}]},
 "db": {}, "room": {}, "assets": {}, "user": {"scopes": ["profile"]}}.
 
 Categories for the link editor come from data/categories.csv (the importer extension reads the same

@@ -55,8 +55,9 @@ const linkSource = (match: Match) => {
 export const filledFallback = (hotspot: Hotspot, match: Match) => fillFromProducts(hotspot.fallback, linkSource(match));
 
 /**
- * The flyer with each hotspot's products applied: objectIDs for item-list SKUs, SKUs and objectIDs for name
- * matches, and the fallback link filled in from the products found.
+ * The flyer with each hotspot's products applied as objectIDs (beans), and the fallback link filled in from
+ * the products found. SKUs are left as they came: a box that has a product gets SKUs only from a person, who
+ * adds them to point at particular colours or sizes.
  */
 export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlyer {
   return {
@@ -70,12 +71,7 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
         // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
         if (match.status === 'offline' && !chosen.length) return { ...h, objectIds: [] };
-        // Item-list SKUs are kept (all colours and sizes) and the products' objectIDs added; items found by
-        // style had no SKUs, so they take the products' SKUs.
-        if (match.status === 'kept') {
-          return { ...h, skus: h.skus.length ? h.skus : chosen.map((c) => c.sku), objectIds: chosen.map((c) => c.objectID) };
-        }
-        return { ...h, skus: chosen.map((c) => c.sku), objectIds: chosen.map((c) => c.objectID) };
+        return { ...h, objectIds: chosen.map((c) => c.objectID) };
       }),
     })),
   };

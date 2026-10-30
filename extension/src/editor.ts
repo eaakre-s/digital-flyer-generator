@@ -39,7 +39,9 @@ const el = (tag: string, props: Record<string, unknown> = {}, ...kids: (Node | s
 };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const hasProduct = (hotspot: Hotspot) => hotspot.skus.length > 0;
+const hasProduct = (hotspot: Hotspot) => hotspot.skus.length > 0 || (hotspot.objectIds?.length ?? 0) > 0;
+// Variant SKUs are all digits; anything else typed among them is a product id (bean).
+const SKU_PATTERN = /^\d{8,13}$/;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 const state = {
@@ -222,19 +224,18 @@ function field(label: string, input: HTMLElement) {
   return el('label', { className: 'f' }, el('span', { textContent: label }), input);
 }
 
-function productRow(hotspot: Hotspot, index: number) {
-  const objectId = hotspot.objectIds?.[index];
-  const product = objectId ? state.products.get(objectId) : undefined;
-  const name = product?.title ?? (objectId ? `Product ${objectId}` : 'Product');
+/** One of the hotspot's products, by its objectID (bean). */
+function productRow(hotspot: Hotspot, objectId: string) {
+  const product = state.products.get(objectId);
+  const name = product?.title ?? `Product ${objectId}`;
   const remove = el('button', { type: 'button', className: 'link', textContent: 'Remove', disabled: deps.readOnly() });
-  remove.setAttribute('aria-label', `Remove ${product?.title ?? hotspot.skus[index]}`);
+  remove.setAttribute('aria-label', `Remove ${name}`);
   remove.addEventListener('click', () => {
-    hotspot.skus.splice(index, 1);
-    hotspot.objectIds?.splice(index, 1);
+    hotspot.objectIds = (hotspot.objectIds ?? []).filter((id) => id !== objectId);
     changed(hotspot);
     render();
   });
-  return el('li', {}, el('span', { textContent: name }), el('span', { className: 'sku', textContent: `SKU ${hotspot.skus[index]}` }), remove);
+  return el('li', {}, el('span', { textContent: name }), el('span', { className: 'sku', textContent: `Bean ${objectId}` }), remove);
 }
 
 function renderSearch(hotspot: Hotspot) {
@@ -269,7 +270,6 @@ function renderSearch(hotspot: Hotspot) {
       const added = hotspot.objectIds?.includes(candidate.objectID);
       const add = el('button', { type: 'button', className: 'link', textContent: added ? 'Added' : 'Add', disabled: added || deps.readOnly() });
       add.addEventListener('click', () => {
-        hotspot.skus = [...hotspot.skus, candidate.sku];
         hotspot.objectIds = [...(hotspot.objectIds ?? []), candidate.objectID];
         state.products.set(candidate.objectID, candidate);
         changed(hotspot);
@@ -738,13 +738,24 @@ function renderInspector() {
     inStoreToggle(hotspot),
   );
   const products = el('div', { className: 'group' }, el('h4', { textContent: 'Products' }));
-  if (hotspot.skus.length) {
-    products.append(el('ul', { className: 'linked' }, ...hotspot.skus.map((_, i) => productRow(hotspot, i))));
-    loadProductNames(hotspot.objectIds ?? []);
-  } else {
+  const objectIds = hotspot.objectIds ?? [];
+  if (objectIds.length) {
+    products.append(el('ul', { className: 'linked' }, ...objectIds.map((id) => productRow(hotspot, id))));
+    loadProductNames(objectIds);
+  } else if (!hotspot.skus.length) {
     products.append(el('p', { className: 'warn', textContent: 'No product: this hotspot uses its link below.' }));
   }
-  products.append(renderSearch(hotspot));
+  // Read once the field is left, so a bean typed among the SKUs isn't taken while half typed.
+  const skus = el('input', { type: 'text', value: hotspot.skus.join(', '), disabled: ro }) as HTMLInputElement;
+  skus.addEventListener('change', () => {
+    const typed = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    hotspot.skus = typed.filter((t) => SKU_PATTERN.test(t));
+    const beans = typed.filter((t) => !SKU_PATTERN.test(t));
+    if (beans.length) hotspot.objectIds = [...new Set([...(hotspot.objectIds ?? []), ...beans])];
+    changed(hotspot);
+    render();
+  });
+  products.append(field('SKUs (optional: particular colours or sizes)', skus), renderSearch(hotspot));
   panel.append(
     el('div', { className: 'head' }, back, statusBadge()),
     el('h3', { textContent: `Hotspot ${state.selected + 1}` }),

@@ -43,7 +43,7 @@ header.top{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:12px 20px;align-item
 .btn.primary{background:var(--red);border-color:var(--red);color:var(--red-ink)}
 .btn.primary:hover:not(:disabled){filter:brightness(1.08)}
 .btn[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
-.details{grid-column:1/-1;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.details{grid-column:1/-1;display:grid;grid-template-columns:2fr repeat(5,1fr);gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 label.f input,label.f select,label.f textarea{text-transform:none;letter-spacing:0;font-weight:500;font-size:14px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 9px;width:100%}
 label.f textarea{min-height:56px;resize:vertical}
@@ -157,6 +157,13 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
 .colmap .ask .reply{display:flex;gap:8px}
 .colmap .ask .reply input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:7px 9px;color:var(--ink)}
 .colmap .actions{display:flex;justify-content:flex-end;gap:8px}
+.itemlist{width:min(1100px,calc(100vw - 32px))}
+.itemlist .listtools{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.itemlist .listtools input[type=search]{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:7px 9px;color:var(--ink)}
+.itemlist .beans{font-family:var(--mono);font-size:12px}
+.itemlist tr.part td{color:var(--ink-2)}
+.itemlist tr.part td:nth-child(4){padding-left:22px}
+.itemlist .boxref{margin-right:8px}
 .sheetnote{font-size:13px;color:var(--ink-2)}
 .guidehead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
 .guidehead h2{font:800 24px/1 var(--display);text-transform:uppercase;margin:0}
@@ -190,6 +197,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
       <button class="btn" id="sheetCols" type="button" aria-haspopup="dialog" hidden>Columns</button>
+      <button class="btn" id="listBtn" type="button" aria-haspopup="dialog" hidden>View item list</button>
       <button class="btn" id="adBtn" type="button" aria-haspopup="dialog" hidden>Load AS400 ad</button>
       <button class="btn" id="resetBtn" type="button" aria-haspopup="dialog">Start over</button>
     </div>
@@ -200,6 +208,8 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <label class="f">Campaign code<input id="fCampaign" class="mono" type="text" placeholder="biggame26" pattern="[a-z0-9_-]+"></label>
     <label class="f">Sale starts<input id="fStart" type="date"></label>
     <label class="f">Sale ends<input id="fEnd" type="date"></label>
+    <label class="f" title="The page number printed on the first page of the PDF. Leave empty when it is 1.">First printed page<input id="fFirstPage" class="mono" type="number" min="0" step="1" placeholder="1"></label>
+    <label class="f" title="The first PDF page that shows two printed pages side by side. Leave empty when every PDF page is one printed page.">Spreads from PDF page<input id="fSpreads" class="mono" type="number" min="1" step="1" placeholder="none"></label>
   </section>
 
   <aside class="rail" aria-label="Pages">
@@ -249,6 +259,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="export">
       <button class="btn primary" id="exportBtn" type="button" disabled>Save images + flyer data (.zip)</button>
       <button class="btn" id="exportJsonBtn" type="button" disabled>Save flyer data only (.json)</button>
+      <button class="btn" id="adPageBtn" type="button" disabled>Save Ad Page list (.csv)</button>
       <p class="exportwhy" id="exportWhy" role="status"></p>
       <p>Upload the images to ECOM Creative › Content Pages › Digital Flyers, then import the flyer data in the Digital Flyer item.</p>
     </div>
@@ -289,6 +300,26 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
   <p id="savingText" role="status"></p>
   <progress id="savingBar" max="1" value="0" aria-label="Saving progress" hidden></progress>
   <p class="hint">Keep this tab open until it finishes.</p>
+</dialog>
+
+<dialog class="guide colmap itemlist" id="listDlg" aria-labelledby="listTitle">
+  <div class="guidehead">
+    <h2 id="listTitle">Item list</h2>
+    <button class="btn" id="listClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead" id="listLead"></p>
+    <div class="listtools">
+      <input type="search" id="listFilter" placeholder="Filter by description, brand, SKU or bean" aria-label="Filter the item list">
+      <label class="check"><input type="checkbox" id="listUnplaced"> Only items on no box</label>
+      <button class="btn" id="listBeans" type="button" hidden>Find beans in BigQuery</button>
+    </div>
+    <p class="sheetnote" id="listStatus" role="status"></p>
+    <table>
+      <thead><tr><th scope="col">Page</th><th scope="col">Item #</th><th scope="col">Brand / vendor</th><th scope="col">Description</th><th scope="col">Price</th><th scope="col">SKUs</th><th scope="col">Beans</th><th scope="col">Boxes</th></tr></thead>
+      <tbody id="listBody"></tbody>
+    </table>
+  </div>
 </dialog>
 
 <dialog class="guide colmap" id="addlg" aria-labelledby="adTitle">
@@ -433,7 +464,6 @@ function persist() {
   const key = storeKey(); if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' })) }));
-    localStorage.setItem('flyer-studio:details', JSON.stringify(readDetails()));
   } catch {}
 }
 function restore() {
@@ -442,13 +472,15 @@ function restore() {
 
 // ---------- details ----------
 function readDetails() {
-  return { title: $('fTitle').value.trim(), campaign: $('fCampaign').value.trim().toLowerCase(), startDate: $('fStart').value, endDate: $('fEnd').value };
+  return { title: $('fTitle').value.trim(), campaign: $('fCampaign').value.trim().toLowerCase(), startDate: $('fStart').value, endDate: $('fEnd').value, firstPage: $('fFirstPage').value.trim(), spreadsFrom: $('fSpreads').value.trim() };
 }
 function writeDetails(d) {
   if (!d) return;
   $('fTitle').value = d.title || ''; $('fCampaign').value = d.campaign || ''; $('fStart').value = d.startDate || ''; $('fEnd').value = d.endDate || '';
+  $('fFirstPage').value = d.firstPage || ''; $('fSpreads').value = d.spreadsFrom || '';
 }
-['fTitle', 'fCampaign', 'fStart', 'fEnd'].forEach((id) => {
+const DETAIL_FIELDS = ['fTitle', 'fCampaign', 'fStart', 'fEnd', 'fFirstPage', 'fSpreads'];
+DETAIL_FIELDS.forEach((id) => {
   $(id).addEventListener('change', () => { persist(); updateExport(); });
   $(id).addEventListener('input', updateExport);
 });
@@ -483,6 +515,7 @@ const COLUMN_PATTERNS = {
   vendorNo: /^vendor\s*(number|#|no\.?|id)$/i,
   sku: /^(item\s*)?skus?(\s*(#|no\.?|numbers?))?$/i,
   style: /^style/i,
+  printStyle: /^print\b.*\bstyles?\b/i,
   desc: /description|^(product|item)(\s*name)?$|^copy$/i,
   retail: /^(retail|reg(ular)?|msrp|compare\s*at)\b/i,
   sale: /^(sale|ad\s*price|promo|offer\s*price|special|event\s*price)\b/i,
@@ -492,6 +525,7 @@ const COLUMN_PATTERNS = {
 const COLUMN_FIELDS = [
   ['sku', 'SKU', 'The 11-digit Scheels SKU of each product, colour or size (not the UPC).'],
   ['style', 'Style', 'Vendor style number; finds products when the SKU is missing.'],
+  ['printStyle', 'Print styles', 'Style and colour codes as printed (column K of marketing\u2019s status sheet); with the vendor number they find each product\u2019s bean.'],
   ['desc', 'Description', 'Product name or description.'],
   ['brand', 'Brand', 'Brand as it should appear.'],
   ['page', 'Page', 'Flyer page(s) the item is printed on.'],
@@ -546,7 +580,7 @@ function parseOffers(rows, header) {
     // Section rows like "Page 24-25" or "PAGE 6-7 WATERFOWL" carry no SKU.
     if (!skuCell && /^page\s*\d/i.test(desc)) { sectionPages = pageNumbers(desc); current = null; continue; }
     // A row with no SKU, Item # or Page still counts when it has a style (colour rows like XT-BB).
-    if (!skuCell && !item && !page && !cell(r, 'style')) continue;
+    if (!skuCell && !item && !page && !cell(r, 'style') && !cell(r, 'printStyle')) continue;
     const brand = cell(r, 'brand'), vendor = cell(r, 'vendor'), vendorNo = cell(r, 'vendorNo');
     // A row from another brand and vendor than its offer (CVA rows under a Savage offer) is its own item
     // whose Item # and Page were left blank: it starts a new offer on the same pages. Store-wide offers
@@ -557,21 +591,23 @@ function parseOffers(rows, header) {
       current = {
         id: `o${offers.length + 1}`, item, pages: page ? pageNumbers(page) : otherMaker ? current.pages : sectionPages,
         brand, vendor, vendorNo, desc, retail: cell(r, 'retail'), sale: cell(r, 'sale'),
-        styles: [], skus: [], products: [], allStyles: false, inStoreOnly: false, issues: [],
+        styles: [], printStyles: [], skus: [], products: [], allStyles: false, inStoreOnly: false, issues: [],
       };
       offers.push(current);
     }
-    const style = cell(r, 'style');
+    const style = cell(r, 'style'), printStyle = cell(r, 'printStyle');
     if (style) current.styles.push(style);
+    if (printStyle) current.printStyles.push(printStyle);
     if (/^all\b/i.test(style) || /\ball\b/i.test(skuCell) || /^all$/i.test(current.brand)) current.allStyles = true;
     if (/^y(es)?$/i.test(cell(r, 'inStore'))) current.inStoreOnly = true;
     if (!current.desc && desc) current.desc = desc;
     let product = current.products.find((p) => p.desc.toLowerCase() === (desc || current.desc).toLowerCase());
     if (!product) {
-      product = { id: `${current.id}-${current.products.length + 1}`, desc: desc || current.desc, brand: brand || current.brand, vendor: vendor || current.vendor, vendorNo: vendorNo || current.vendorNo, retail: cell(r, 'retail'), sale: cell(r, 'sale'), styles: [], skus: [] };
+      product = { id: `${current.id}-${current.products.length + 1}`, desc: desc || current.desc, brand: brand || current.brand, vendor: vendor || current.vendor, vendorNo: vendorNo || current.vendorNo, retail: cell(r, 'retail'), sale: cell(r, 'sale'), styles: [], printStyles: [], skus: [] };
       current.products.push(product);
     }
     if (style) product.styles.push(style);
+    if (printStyle) product.printStyles.push(printStyle);
     for (const token of skuCell.split(/[\s,;/]+/).filter(Boolean)) {
       if (SKU_PATTERN.test(token)) {
         const sku = normalizeSku(token);
@@ -625,10 +661,15 @@ function relinkHotspots() {
         ? [...new Set(skus.map((sku) => bySku.get(sku)).filter(Boolean))]
         : (h.offerIds || []).filter((id) => index.has(id));
       h.offerIds = ids;
+      const derived = ids.length ? fromOffers(ids.map((id) => index.get(id)), h.label || '', h.brand || '') : null;
+      // Beans found after a box was linked reach it here, unless someone typed the box's own; the SKUs
+      // the item list filled in then go, while SKUs someone typed stay.
+      if (derived?.beans.length && !h.beansEdited && derived.beans.join(',') !== (h.beans || []).join(',')) { h.beans = derived.beans; changed++; }
+      const filledIn = skus.length > 0 && skus.length === derived?.skus.length && skus.every((sku) => derived.skus.includes(sku));
+      if (filledIn && h.beans?.length && !h.skusEdited) { h.skus = []; changed++; }
       // Boxes linked to items that have no SKU get the items' style-based ids (added after some boxes were linked).
-      if (!skus.length && ids.length) {
-        const styleIds = fromOffers(ids.map((id) => index.get(id)), h.label || '', h.brand || '').styleIds;
-        if (styleIds.join(',') !== (h.objectIds || []).join(',')) { h.objectIds = styleIds; changed++; continue; }
+      if (!skus.length && derived) {
+        if (derived.styleIds.join(',') !== (h.objectIds || []).join(',')) { h.objectIds = derived.styleIds; changed++; continue; }
       }
       if (ids.join(',') !== before) changed++;
     }
@@ -677,9 +718,77 @@ function showItemList() {
   const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
   $('sheetName').textContent = !sheet.name ? 'None' : sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
   $('sheetCols').hidden = sheet.source !== 'file' || !Object.keys(sheet.tabs).length;
+  $('listBtn').hidden = !state.offers.length;
+  if ($('listDlg').open) renderItemList();
   updateButtons();
   return skuCount;
 }
+
+/** Where each item-list entry is on the flyer: entry id → the boxes linked to it, as [page index, box index]. */
+function entryBoxes() {
+  const boxes = new Map();
+  state.pages.forEach((p, i) => p.hotspots.forEach((h, j) => {
+    for (const id of h.offerIds || []) boxes.set(id, [...(boxes.get(id) || []), [i, j]]);
+  }));
+  return boxes;
+}
+
+/** The item list as a table: each offer, the products of grouped offers under it, their beans and the boxes using them. */
+function renderItemList() {
+  const boxes = entryBoxes();
+  const query = $('listFilter').value.trim().toLowerCase();
+  const unplacedOnly = $('listUnplaced').checked;
+  const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
+  const parts = state.offers.flatMap((o) => (o.products?.length > 1 ? o.products : [o]));
+  const withBeans = parts.filter((e) => e.beans?.length).length;
+  $('listLead').textContent = `${sheet.name || 'Item list'} · ${state.offers.length} items · ${skuCount} SKUs · beans for ${withBeans} of ${parts.length} products`;
+  const boxesOf = (ids) => ids.flatMap((id) => boxes.get(id) || []);
+  const text = (o, e) => [o.item, makerOf(e, o), o.vendor, e.desc, ...(e.skus || []), ...(e.beans || [])].join(' ').toLowerCase();
+  const refs = (list) => {
+    const cell = el('td');
+    for (const [i, j] of list) {
+      const b = el('button', { className: 'linkbtn boxref', type: 'button', textContent: `p.${i + 1} #${j + 1}` });
+      b.addEventListener('click', async () => { $('listDlg').close(); await showPage(i); state.selected = j; renderStage(); });
+      cell.append(b);
+    }
+    if (!list.length) cell.textContent = '—';
+    return cell;
+  };
+  const row = (o, e, part) => el('tr', { className: part ? 'part' : '' },
+    el('td', { textContent: part ? '' : o.pages.join(', ') || '—' }),
+    el('td', { textContent: part ? '' : o.item || '' }),
+    el('td', { textContent: makerOf(e, o) }),
+    el('td', { textContent: part ? `↳ ${e.desc}` : e.desc }),
+    el('td', { textContent: priceNote(e.retail || e.sale ? e : o) }),
+    el('td', { textContent: String(e.skus?.length || 0), title: (e.skus || []).slice(0, 12).join(', ') }),
+    el('td', { className: 'beans', textContent: (e.beans || []).join(', ') || '—' }),
+    refs(boxesOf(part ? [e.id] : [o.id])));
+  const rows = [];
+  for (const o of state.offers) {
+    const grouped = o.products?.length > 1;
+    const ids = [o.id, ...(grouped ? o.products.map((p) => p.id) : [])];
+    if (unplacedOnly && boxesOf(ids).length) continue;
+    if (query && !text(o, o).includes(query) && !(grouped && o.products.some((p) => text(o, p).includes(query)))) continue;
+    rows.push(row(o, o, false));
+    if (grouped) for (const p of o.products) rows.push(row(o, p, true));
+  }
+  $('listBody').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colSpan: 8, className: 'sub', textContent: 'No items match.' }))]));
+}
+
+$('listBtn').addEventListener('click', () => { renderItemList(); $('listDlg').showModal(); });
+$('listClose').addEventListener('click', () => $('listDlg').close());
+$('listFilter').addEventListener('input', renderItemList);
+$('listUnplaced').addEventListener('change', renderItemList);
+$('listBeans').addEventListener('click', async () => {
+  $('listBeans').disabled = true;
+  $('listStatus').classList.remove('err');
+  $('listStatus').textContent = 'Finding each product’s bean in BigQuery…';
+  const result = await lookUpBeans();
+  $('listStatus').textContent = result;
+  $('listStatus').classList.toggle('err', !/^Found beans/.test(result));
+  $('listBeans').disabled = false;
+  renderItemList();
+});
 
 function applySheet() {
   const rows = sheet.tabs[sheet.tab] || [];
@@ -710,7 +819,9 @@ $('sheetInput').addEventListener('change', async (ev) => {
     sheet.confirmed = !!sheet.header && (!!remembered || allFound);
     const { skuCount, issues } = applySheet();
     if (sheet.confirmed) {
-      setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list (${describeColumns()}).${issues ? ` ${issues} have SKU problems in the sheet (scientific notation or TBD); those hotspots are flagged.` : ''}`);
+      const read = `Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list (${describeColumns()}).${issues ? ` ${issues} have SKU problems in the sheet (scientific notation or TBD); those hotspots are flagged.` : ''}`;
+      setStatus(read);
+      lookUpBeans().then((beans) => { if (beans) setStatus(`${read} ${beans}`); });
     } else {
       setStatus('Some item list columns could not be found by name. Confirm them before generating.', true);
       openColumnDialog(true);
@@ -787,7 +898,9 @@ $('cmUse').addEventListener('click', () => {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(layouts)); } catch {}
   $('colmap').close();
   const { skuCount } = applySheet();
-  setStatus(`Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list. These columns are remembered for sheets laid out the same way.`);
+  const read = `Read ${state.offers.length} advertised items with ${skuCount} SKUs from the item list. These columns are remembered for sheets laid out the same way.`;
+  setStatus(read);
+  lookUpBeans().then((beans) => { if (beans) setStatus(`${read} ${beans}`); });
 });
 $('cmSkip').addEventListener('click', () => {
   state.offers = []; Object.assign(sheet, { name: '', source: '', confirmed: true, header: null });
@@ -900,6 +1013,127 @@ async function ibmiRows(sql) {
   return payload.data;
 }
 
+// ---------- beans ----------
+// A bean is a product's id across Scheels systems: vendor number + PIM's style code, the style all of a
+// product's colours share (1005-HV8154 for Nike Vomero Plus). The AS400 has only the vendor's colour
+// styles (HV8154-001 …), so beans come from the warehouse's product table in BigQuery, read as the viewer.
+const BIGQUERY = 'BigQuery';
+const BEAN_PROJECT = 'scheels-data-marts';
+const BEAN_TABLE = '`scheels-data-warehouse-prod.product.dim_product`';
+const MAX_BEAN_LOOKUPS = 10000;
+/** Style codes in a cell ("HV8154-001, HV8154-002"), upper-cased, with an "-ALL" (every colour) ending dropped. */
+const styleCodes = (text) => String(text || '').split(/[\s,;/]+/)
+  .map((s) => s.trim().toUpperCase().replace(/-ALL$/, ''))
+  .filter((s) => s !== 'ALL' && /^[A-Z0-9][A-Z0-9._-]{0,39}$/.test(s));
+
+/** The query for the beans of these SKUs and (vendor number, style) pairs. Values are checked before they get here. */
+function beanQuery(skus, styles) {
+  const skuList = skus.map((v) => `'${v}'`).join(', ');
+  const styleList = styles.map(([vendor, style]) => `('${vendor}', '${style}')`).join(', ');
+  return `WITH skus AS (SELECT sku FROM UNNEST(ARRAY<STRING>[${skuList}]) AS sku),
+styles AS (SELECT * FROM UNNEST(ARRAY<STRUCT<vendor STRING, style STRING>>[${styleList}]))
+SELECT 'sku' AS kind, p.sku_id AS ref, '' AS style, CONCAT(p.vendor_number, '-', p.pim_style_code) AS bean
+FROM ${BEAN_TABLE} p JOIN skus ON p.sku_id = skus.sku
+WHERE NOT p.is_ean AND IFNULL(p.pim_style_code, '') != ''
+UNION DISTINCT
+SELECT 'style', st.vendor, st.style, CONCAT(p.vendor_number, '-', p.pim_style_code)
+FROM ${BEAN_TABLE} p JOIN styles st ON p.vendor_number = st.vendor AND st.style IN (UPPER(p.as400_vendor_style), UPPER(p.pim_style_code))
+WHERE NOT p.is_ean AND IFNULL(p.pim_style_code, '') != ''`;
+}
+
+/** Beans by SKU and by "vendor|style", from BigQuery. */
+async function lookUpBeanRows(skus, styles) {
+  if (!skus.length && !styles.length) return new Map();
+  const { payload } = await mcp.callTool(BIGQUERY, 'execute_sql_readonly', { projectId: BEAN_PROJECT, query: beanQuery(skus, styles), timeoutMs: 60000 });
+  if (!payload || typeof payload !== 'object') throw { code: 'tool_error', message: String(payload || '') };
+  if (!payload.jobComplete) throw { code: 'not_finished' };
+  if (payload.pageToken) throw { code: 'truncated' };
+  const names = (payload.schema?.fields || []).map((f) => f.name);
+  const found = new Map();
+  for (const row of payload.rows || []) {
+    const r = Object.fromEntries(names.map((n, i) => [n, String(row.f?.[i]?.v ?? '')]));
+    const key = r.kind === 'sku' ? r.ref : `${r.ref}|${r.style}`;
+    if (r.bean) found.set(key, [...new Set([...(found.get(key) || []), r.bean])]);
+  }
+  return found;
+}
+
+/** Each item-list product's bean, found from its SKUs, and from its vendor number with its styles and print styles. */
+async function findBeans() {
+  // A grouped offer's products are what boxes link to; an offer of one product is that product.
+  const parts = state.offers.flatMap((o) => (o.products?.length > 1 ? o.products.map((p) => [p, o]) : [[o, o]]));
+  const sources = parts.map(([entry, offer]) => {
+    const vendor = String(entry.vendorNo || offer.vendorNo || '').trim();
+    const styles = /^\d{1,8}$/.test(vendor) ? [...new Set([...(entry.styles || []), ...(entry.printStyles || [])].flatMap(styleCodes))] : [];
+    return { entry, offer, skus: (entry.skus || []).filter((sku) => SKU_PATTERN.test(sku)), styles: styles.map((style) => [vendor, style]) };
+  });
+  const skus = [...new Set(sources.flatMap((x) => x.skus))].slice(0, MAX_BEAN_LOOKUPS);
+  const styles = [...new Map(sources.flatMap((x) => x.styles).map((pair) => [pair.join('|'), pair])).values()].slice(0, MAX_BEAN_LOOKUPS);
+  const found = await lookUpBeanRows(skus, styles);
+  for (const x of sources) {
+    x.entry.beans = [...new Set([...x.skus.flatMap((sku) => found.get(sku) || []), ...x.styles.flatMap((pair) => found.get(pair.join('|')) || [])])];
+  }
+  for (const o of state.offers) {
+    if (o.products?.length > 1) o.beans = [...new Set(o.products.flatMap((p) => p.beans || []))];
+    else if (o.products?.length === 1) o.products[0].beans = o.beans;
+  }
+  const looked = sources.filter((x) => x.skus.length || x.styles.length);
+  return { found: looked.filter((x) => x.entry.beans.length).length, total: looked.length };
+}
+
+const BEAN_ERRORS = {
+  server_not_connected: `Beans come from ${BIGQUERY}: add the ${BIGQUERY} connector in claude.ai Settings › Connectors, then find beans again from the item list.`,
+  needs_reauth: `Reconnect ${BIGQUERY} in claude.ai Settings › Connectors, then find beans again from the item list.`,
+  selection_required: `You have more than one ${BIGQUERY} connector. Choose one when claude.ai asks, then find beans again.`,
+  server_not_found: `${BIGQUERY} is no longer available. Check it in claude.ai Settings › Connectors.`,
+  not_in_manifest: `${BIGQUERY} is turned off for Flyer Studio. Turn it on from the artifact’s permissions to find beans.`,
+  blocked_by_policy: `Your organization doesn’t allow ${BIGQUERY} here, so beans can’t be looked up.`,
+  approval_required: 'The bean lookup needs your approval. Find beans again from the item list and allow it.',
+  server_unavailable: `${BIGQUERY} didn’t answer. Find beans again from the item list in a minute.`,
+  rate_limited: `Too many ${BIGQUERY} queries at once. Wait a few seconds, then find beans again.`,
+  not_granted: 'Connectors aren’t available in this view, so beans can’t be looked up. Open Flyer Studio on claude.ai.',
+  capability_disabled: 'Connectors aren’t available in this view, so beans can’t be looked up. Open Flyer Studio on claude.ai.',
+  capability_removed: 'Connectors aren’t available in this view, so beans can’t be looked up. Open Flyer Studio on claude.ai.',
+  tool_error: `${BIGQUERY} refused the bean lookup (reading the product table needs the data team’s read access)`,
+  not_finished: `${BIGQUERY} took too long on the bean lookup. Find beans again from the item list.`,
+  truncated: `${BIGQUERY} sent back only part of the beans. Find beans again from the item list.`,
+  upstream_error: `${BIGQUERY} could not be reached for beans. Find beans again from the item list.`,
+};
+const beanError = (e) => {
+  const text = BEAN_ERRORS[e?.code] || BEAN_ERRORS.upstream_error;
+  return e?.code === 'tool_error' ? `${text}${e.message ? `: ${e.message}` : ''}.` : text;
+};
+
+/** Finds the item list's beans and links them to its boxes; returns a sentence for the status line, never throws. */
+async function lookUpBeans() {
+  if (!mcp || !state.offers.length) return '';
+  try {
+    const { found, total } = await findBeans();
+    showItemList(); persist(); renderStage(); renderRail();
+    return total ? `Found beans for ${found} of ${total} products in ${BIGQUERY}.` : '';
+  } catch (e) {
+    return beanError(e);
+  }
+}
+
+/** Gives boxes that have SKUs but no beans (SKUs typed in, or found in the AS400) their beans. Returns how many got one. */
+async function fillBoxBeans() {
+  const boxes = state.pages.flatMap((p) => p.hotspots).filter((h) => !h.beans?.length && (h.skus || []).some((sku) => SKU_PATTERN.test(sku)));
+  const skus = [...new Set(boxes.flatMap((h) => h.skus.map(normalizeSku)).filter((sku) => SKU_PATTERN.test(sku)))].slice(0, MAX_BEAN_LOOKUPS);
+  if (!skus.length) return 0;
+  const found = await lookUpBeanRows(skus, []);
+  let filled = 0;
+  for (const h of boxes) {
+    const beans = [...new Set(h.skus.map(normalizeSku).flatMap((sku) => found.get(sku) || []))];
+    if (beans.length) { h.beans = beans; filled++; }
+  }
+  if (filled) persist();
+  return filled;
+}
+
+/** A box's beans: those found or typed in, and any typed into its SKU field. */
+const beansOf = (h) => [...new Set([...(h.beans || []), ...(h.skus || []).filter((v) => !SKU_PATTERN.test(v) && /^\d+-\S/.test(v))])];
+
 const titleCase = (text) => String(text || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 // A SKU's description ends in its size and colour after the last hyphen: "TOP CORE MDWT HZ-L/COYOTE".
 const styleDesc = (desc) => String(desc || '').replace(/-[^-]*\/[^-]*$/, '').trim();
@@ -959,6 +1193,16 @@ function adOffers(ad, { lines, styles, wide, targets }) {
   return [...offers.values()];
 }
 
+// An ad that lists all its items on one page has not placed them (Blaze Days puts all 19 on page 1).
+const MIN_ITEMS_TO_DOUBT_PAGES = 5;
+
+/** One ad's offers, without page numbers when every item lists the same single page; they're matched by name instead. */
+function dropUnplacedPages(offers) {
+  const pages = new Set(offers.map((o) => o.pages.join(',')));
+  if (offers.length >= MIN_ITEMS_TO_DOUBT_PAGES && pages.size === 1 && offers[0].pages.length === 1) offers.forEach((o) => { o.pages = []; });
+  return offers;
+}
+
 /** Loads AS400 ads as the item list: their offers, plus the title and sale dates when those are empty. */
 async function loadAds(ads) {
   const say = (text, isError = false) => { $('adStatus').textContent = text; $('adStatus').classList.toggle('err', isError); };
@@ -973,7 +1217,7 @@ async function loadAds(ads) {
     for (const [n, ad] of ads.entries()) {
       say(`Reading ad ${ad}${ads.length > 1 ? ` (${n + 1} of ${ads.length})` : ''} from the AS400…`);
       const [lines, styles, wide, targets] = await Promise.all([AD_SQL.lines, AD_SQL.styles, AD_SQL.wide, AD_SQL.targets].map((q) => ibmiRows(q(ad))));
-      offers.push(...adOffers(ad, { lines, styles, wide, targets }));
+      offers.push(...dropUnplacedPages(adOffers(ad, { lines, styles, wide, targets })));
     }
     // A kept sheet's items that the ads also list (by SKU) come from the ads.
     const adSkus = new Set(offers.flatMap((o) => o.skus));
@@ -996,12 +1240,15 @@ async function loadAds(ads) {
     const noPage = offers.filter((o) => !o.pages.length).length;
     const pages = new Set(offers.flatMap((o) => o.pages)).size;
     $('addlg').close();
+    if (mcp) setStatus('Finding each product\u2019s bean in BigQuery\u2026');
+    const beans = await lookUpBeans();
     setStatus([
       `Loaded ${header.map((h) => `ad ${h.AD} (${titleCase(h.NAME)})`).join(', ')}: ${offers.length} items on ${pages} page${pages === 1 ? '' : 's'} with ${skuCount} SKUs.`,
       wholeRange && `${wholeRange} ${wholeRange === 1 ? 'is a whole-range offer' : 'are whole-range offers'} ("all …", or more than ${MAX_AD_PRODUCTS} products), linked by brand rather than SKU.`,
       noSkus && `${noSkus} ${noSkus === 1 ? 'has' : 'have'} no SKUs in the AS400 yet; load the ad again once they're added.`,
       noPage && `${noPage} ${noPage === 1 ? 'has' : 'have'} no page and ${noPage === 1 ? 'is' : 'are'} matched by name.`,
       kept.length && `Kept ${kept.length} items from the item list file that the ads don't list.`,
+      beans,
     ].filter(Boolean).join(' '));
   } catch (e) {
     if (e?.code === 'cancelled') return;
@@ -1246,20 +1493,23 @@ $('cmReplyForm').addEventListener('submit', (ev) => {
 
 // Offers that may be on one page. The sheet's page numbers can drift from the final PDF (Late Hunt's
 // page-26 Pulsar items are listed as 24/25), so this takes offers listed within two pages either way,
-// plus any offer whose model number, or two of whose distinctive words, are printed on the page.
+// plus any offer whose model number, or two of whose distinctive words, are printed on the page. An
+// item list short enough to send whole goes to every page, nearest first.
 const NEARBY_PAGES = 2;
 const MAX_OFFERS_PER_PAGE = 150;
 
 function offersForPage(i, items) {
   if (!state.offers.length) return [];
   const n = i + 1;
-  const pageWords = new Set(items.map((t) => t.text).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
-  const printed = (o) => {
-    const words = [...new Set(`${o.desc} ${(o.products || []).map((p) => p.desc).join(' ')} ${o.styles.join(' ')}`.toLowerCase().split(/[^a-z0-9]+/))].filter((w) => w.length >= 3 && pageWords.has(w));
-    return words.some((w) => /\d/.test(w) && /[a-z]/.test(w)) || words.filter((w) => w.length >= 4).length >= 2;
-  };
   const near = state.offers.filter((o) => o.pages.some((p) => Math.abs(p - n) <= NEARBY_PAGES));
   const seen = new Set(near);
+  if (state.offers.length <= MAX_OFFERS_PER_PAGE) return [...near, ...state.offers.filter((o) => !seen.has(o))];
+  const pageWords = [...new Set(matchWords(items.map((t) => t.text).join(' ')))];
+  const printed = (o) => {
+    const words = [...new Set(matchWords(`${o.desc} ${(o.products || []).map((p) => p.desc).join(' ')} ${o.styles.join(' ')}`))]
+      .filter((w) => w.length >= 3 && pageWords.some((p) => sameWord(p, w)));
+    return words.some((w) => /\d/.test(w) && /[a-z]/.test(w)) || words.filter((w) => w.length >= 4).length >= 2;
+  };
   const elsewhere = state.offers.filter((o) => !seen.has(o) && printed(o));
   return [...near, ...elsewhere].slice(0, MAX_OFFERS_PER_PAGE);
 }
@@ -1292,6 +1542,8 @@ function offerLine(o) {
 // ---------- PDF ----------
 $('pdfInput').addEventListener('change', async (ev) => {
   const file = ev.target.files[0]; if (!file) return;
+  // The details on screen belong to the flyer being replaced; another PDF starts without them.
+  const replacing = !!(state.file || shared.flyerId);
   closeShared();
   setStatus(`Opening ${file.name}…`);
   try {
@@ -1307,8 +1559,8 @@ $('pdfInput').addEventListener('change', async (ev) => {
         error: p.error || (p.status === 'error' ? 'Generating this page failed in an earlier session. Generate it again.' : ''),
       }));
       writeDetails(saved.details);
-    } else if (!$('fTitle').value) {
-      try { writeDetails(JSON.parse(localStorage.getItem('flyer-studio:details') || 'null')); } catch {}
+    } else if (replacing) {
+      writeDetails({});
     }
     if (relinkHotspots()) persist();
     $('pdfName').textContent = `${file.name} · ${pdf.numPages} pages`;
@@ -1511,7 +1763,8 @@ function fromOffers(offers, label, printedBrand) {
       return [`${vendorNo}-${st}`, ...(base ? [`${vendorNo}-${base}`] : [])];
     });
   }))].slice(0, 20);
-  return { brand, skus, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
+  const beans = [...new Set(offers.flatMap((o) => o.beans || []))].slice(0, 40);
+  return { brand, skus, beans, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
 }
 
 /**
@@ -1630,24 +1883,54 @@ function cleanHotspot(h, offersById) {
   const label = String(h?.label || '').trim();
   const offerIds = Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [];
   const entries = offerIds.map((id) => offersById.get(id));
-  const { brand, skus, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
+  const { brand, skus, beans, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
   return {
     id: newId('h'), label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
-    offerIds, skus, objectIds: styleIds, fallback, inStoreOnly,
+    offerIds, skus: beans.length ? [] : skus, beans, objectIds: styleIds, fallback, inStoreOnly,
     confidence: h?.confidence === 'high' && !issues.length ? 'high' : 'low', note, locked: false,
   };
 }
 
 // ---------- matching a box to the item list without Claude ----------
 const MATCH_STOPWORDS = new Set(['mens', 'womens', 'youth', 'kids', 'sale', 'reg', 'now', 'the', 'and', 'with', 'for', 'off', 'save']);
-const matchWords = (text) => String(text).toLowerCase().replace(/[®™'’]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !MATCH_STOPWORDS.has(w));
+// The codes the AS400 writes for apparel cuts, added beside the printed words.
+const CUT_CODES = [[/\b(1\/2|half)[\s-]*zip\b/g, 'hz'], [/\b(1\/4|quarter)[\s-]*zip\b/g, 'qz'], [/\bfull[\s-]*zip\b/g, 'fz'], [/\bpullover\b/g, 'po']];
+// A unit straight after a number is dropped, so a printed "4-12x44mm" or "1500 lb" reads like the AS400's "4-12X44" or "1500LB".
+const matchText = (text) => CUT_CODES.reduce((t, [cut, code]) => t.replace(cut, (m) => `${m} ${code}`),
+  String(text).toLowerCase().replace(/[®™'’]/g, '').replace(/(\d)\s*(mm|lbs?|oz|in)\b/g, '$1'));
+const matchWords = (text) => matchText(text).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !MATCH_STOPWORDS.has(w));
 const moneyIn = (text) => [...String(text).matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/g)].map((m) => Number(m[1].replace(/,/g, '')));
 
+/**
+ * Whether a printed word and an item-list word are the same word: equal, a plural, a long shared stem
+ * ("rangefinding", "rangefinder"), or an AS400 abbreviation, which leaves out vowels or cuts the word
+ * short ("crssfire", "dmndbck" for diamondback, "strk", "eag"). Numbers and model numbers must be equal.
+ */
+function sameWord(printed, listed) {
+  if (printed === listed) return true;
+  if (/\d/.test(printed) || /\d/.test(listed)) return false;
+  if (printed === `${listed}s` || listed === `${printed}s`) return true;
+  let stem = 0;
+  while (stem < Math.min(printed.length, listed.length) && printed[stem] === listed[stem]) stem++;
+  if (stem >= 6 && stem >= 0.75 * Math.max(printed.length, listed.length)) return true;
+  if (listed.length < 3 || listed.length >= printed.length || listed.length < printed.length * 0.4 || listed[0] !== printed[0]) return false;
+  let at = 0;
+  for (const ch of listed) {
+    while (at < printed.length && printed[at] !== ch) {
+      if (!'aeiouy'.includes(printed[at])) return false;
+      at++;
+    }
+    if (at === printed.length) return false;
+    at++;
+  }
+  return true;
+}
+
 // Each matchable entry (a product of a grouped offer, or the offer itself) with its words, built once per item list.
-let entryCache = { offers: null, entries: [], weight: new Map() };
+let entryCache = { offers: null, entries: [], weight: new Map(), forms: new Map() };
 function matchEntries() {
   if (entryCache.offers === state.offers) return entryCache;
   const entries = [];
@@ -1655,56 +1938,114 @@ function matchEntries() {
     const parts = o.products && o.products.length > 1 ? o.products.filter((p) => p.skus.length) : [o];
     for (const e of parts) {
       const words = new Set(matchWords(`${e.desc} ${e.brand || o.brand} ${e.vendor || o.vendor || ''} ${(e.styles || []).join(' ')}`));
-      entries.push({ id: e.id || o.id, offer: o, entry: e, words, prices: moneyIn(`$${o.retail} $${o.sale} $${e.retail || ''} $${e.sale || ''}`) });
+      const described = new Set(matchWords(e.desc));
+      entries.push({ id: e.id || o.id, offer: o, entry: e, words, described, prices: moneyIn(`$${o.retail} $${o.sale} $${e.retail || ''} $${e.sale || ''}`) });
     }
   }
   // Rare words ("Musselshell", "XG35") say more than common ones ("Scheels", "Pant").
   const df = new Map();
   for (const e of entries) for (const w of e.words) df.set(w, (df.get(w) || 0) + 1);
   const weight = new Map([...df].map(([w, n]) => [w, Math.log((entries.length + 1) / n)]));
-  entryCache = { offers: state.offers, entries, weight };
+  entryCache = { offers: state.offers, entries, weight, forms: new Map() };
   return entryCache;
 }
 
-/** Item-list entries a box could be, best first: scored on shared (rarity-weighted) words, price and page. */
+/**
+ * The item-list words a printed word stands for (see sameWord), and how rare they are together: an ad
+ * can spell a word in full on one line and abbreviate it on the next ("MUSSELSHELL", "MUSSELSHLL").
+ * Worked out once per word and item list.
+ */
+function wordForms(word) {
+  const { entries, weight, forms: cache } = matchEntries();
+  if (!cache.has(word)) {
+    const forms = [...weight.keys()].filter((w) => sameWord(word, w));
+    const holders = entries.filter((e) => forms.some((w) => e.words.has(w))).length;
+    cache.set(word, { forms, weight: holders ? Math.log((entries.length + 1) / holders) : 0 });
+  }
+  return cache.get(word);
+}
+
+// A word on at most a third of the item list's entries says which product a box is; the brand alone does not.
+const DISTINCTIVE_WEIGHT = Math.log(3);
+
+/**
+ * Item-list entries a box could be, best first: scored on shared (rarity-weighted) words, on how much
+ * of the entry's own description is printed in the box (`coverage`, by rarity), and on price and page
+ * once a distinctive word is shared.
+ */
 function suggestEntries(h, pageNumber, limit = 5) {
   const { entries, weight } = matchEntries();
-  const label = [...new Set(matchWords(`${h.label} ${h.brand || ''}`))].filter((w) => weight.has(w));
+  const label = [...new Set(matchWords(`${h.label} ${h.brand || ''}`))]
+    .map((word) => ({ word, ...wordForms(word) }))
+    .filter((x) => x.forms.length);
   if (!label.length) return [];
-  const total = label.reduce((n, w) => n + weight.get(w), 0);
+  const total = label.reduce((n, x) => n + x.weight, 0);
   const printed = moneyIn(h.priceText);
   const scored = [];
   for (const e of entries) {
-    const shared = label.filter((w) => e.words.has(w));
-    if (!shared.length) continue;
-    let score = shared.reduce((n, w) => n + weight.get(w), 0) / total;
-    if (shared.some((w) => /\d/.test(w) && /[a-z]/.test(w))) score += 0.3;
-    if (printed.some((p) => e.prices.some((q) => Math.abs(p - q) < 0.01))) score += 0.4;
-    if (e.offer.pages.some((n) => Math.abs(n - pageNumber) <= NEARBY_PAGES)) score += 0.2;
-    scored.push({ ...e, score });
+    const found = new Set();
+    let shared = 0, distinctive = false, model = false;
+    for (const x of label) {
+      const hits = x.forms.filter((w) => e.words.has(w));
+      if (!hits.length) continue;
+      hits.forEach((w) => found.add(w));
+      shared += x.weight;
+      distinctive ||= x.weight >= DISTINCTIVE_WEIGHT;
+      model ||= /\d/.test(x.word) && /[a-z]/.test(x.word);
+    }
+    if (!shared) continue;
+    // A box whose printed brand shares no word with the entry's brand is another brand's product.
+    const brand = matchWords(e.entry.brand || e.offer.brand || '').filter((w) => w !== 'all');
+    const clash = !!brand.length && !!h.brand && !matchWords(h.brand).some((w) => brand.some((b) => sameWord(w, b)));
+    let score = shared / total;
+    if (model) score += 0.3;
+    const priced = printed.some((p) => e.prices.some((q) => Math.abs(p - q) < 0.01));
+    if (distinctive && priced) score += 0.4;
+    if (distinctive && e.offer.pages.some((n) => Math.abs(n - pageNumber) <= NEARBY_PAGES)) score += 0.2;
+    const described = [...e.described].reduce((n, w) => n + weight.get(w), 0);
+    const coverage = described ? [...e.described].filter((w) => found.has(w)).reduce((n, w) => n + weight.get(w), 0) / described : 0;
+    score += 0.3 * coverage;
+    scored.push({ ...e, score, distinctive, coverage, clash, agrees: priced || model });
   }
-  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
-}
-
-/** Links a hotspot to item-list entries, taking SKUs, in-store flag and (unless set by hand) the fallback link from them. */
-function linkToEntries(h, ids) {
-  const index = offerIndex(state.offers);
-  const entries = ids.map((id) => index.get(id)).filter(Boolean);
-  const derived = fromOffers(entries, h.label, h.brand || '');
-  Object.assign(h, { offerIds: ids, skus: derived.skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
-  if (!h.linkEdited) h.fallback = derived.fallback;
+  return scored.sort((a, b) => b.score - a.score || b.coverage - a.coverage).slice(0, limit);
 }
 
 const AUTO_MATCH_MIN = 1.0;   // shared words plus a price or model-number agreement
 const AUTO_MATCH_GAP = 0.25;  // clearly ahead of the next candidate
+// How much of an entry's own description must be printed in a box to link it, so a box naming another
+// product isn't linked on one shared word: a third when the price or a model number agrees too, else half.
+const AUTO_MATCH_COVERAGE = 1 / 3;
+const AUTO_MATCH_COVERAGE_ALONE = 1 / 2;
+
+/** The first of these suggestions when it is clear enough to link without asking, else null. */
+function clearMatch([best, next]) {
+  if (!best || best.score < AUTO_MATCH_MIN || (next && best.score - next.score < AUTO_MATCH_GAP)) return null;
+  if (!best.distinctive || best.clash) return null;
+  return best.coverage >= (best.agrees ? AUTO_MATCH_COVERAGE : AUTO_MATCH_COVERAGE_ALONE) ? best : null;
+}
+
+/**
+ * Links a hotspot to item-list entries, taking their beans (or, when none were found, their SKUs), the
+ * in-store flag and (unless set by hand) the fallback link from them. A box with beans gets SKUs only
+ * from a person, who adds them to point at particular colours or sizes.
+ */
+function linkToEntries(h, ids) {
+  const index = offerIndex(state.offers);
+  const entries = ids.map((id) => index.get(id)).filter(Boolean);
+  const derived = fromOffers(entries, h.label, h.brand || '');
+  const skus = !derived.beans.length ? derived.skus : h.skusEdited ? h.skus : [];
+  Object.assign(h, { offerIds: ids, skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
+  if (!h.beansEdited) h.beans = derived.beans;
+  if (!h.linkEdited) h.fallback = derived.fallback;
+}
 
 function matchPageFromList(i) {
   const p = state.pages[i];
   let linked = 0;
   for (const h of p.hotspots) {
-    if (h.skus?.length || h.objectIds?.length || h.inStoreOnly) continue;
-    const [best, next] = suggestEntries(h, i + 1, 2);
-    if (best && best.score >= AUTO_MATCH_MIN && (!next || best.score - next.score >= AUTO_MATCH_GAP)) {
+    if (h.skus?.length || h.objectIds?.length || h.beans?.length || h.inStoreOnly) continue;
+    const best = clearMatch(suggestEntries(h, i + 1, 2));
+    if (best) {
       linkToEntries(h, [best.id]);
       linked++;
     }
@@ -1847,8 +2188,8 @@ async function fillFromArea(i, h) {
   h.label = h.label || inside.filter((t) => !/\$|^\d+$/.test(t.text)).slice(0, 6).map((t) => t.text).join(' ');
   h.priceText = h.priceText || prices;
   h.textItemIds = inside.map((t) => t.id);
-  const [best, next] = suggestEntries({ label: text, brand: '', priceText: text }, i + 1, 2);
-  if (best && best.score >= AUTO_MATCH_MIN && (!next || best.score - next.score >= AUTO_MATCH_GAP)) {
+  const best = clearMatch(suggestEntries({ label: text, brand: '', priceText: text }, i + 1, 2));
+  if (best) {
     linkToEntries(h, [best.id]);
     setStatus(`Filled from this area and linked "${best.entry.desc}" from the item list.`);
   } else {
@@ -1877,12 +2218,12 @@ function problemsFor(h, items) {
   // An AS400 ad lists only discounted items, so a box printing just a regular price is expected to have
   // no match; the importer finds its product by the printed name and price.
   const offAd = sheet.source === 'as400' && !printsOffer(h.priceText);
-  if (state.offers.length && !h.skus.length && !h.objectIds?.length && !h.offerIds?.length && !h.inStoreOnly && !offAd) out.push('No item-list match. Add a SKU or rely on the fallback link.');
+  if (state.offers.length && !h.skus.length && !h.objectIds?.length && !h.beans?.length && !h.offerIds?.length && !h.inStoreOnly && !offAd) out.push('No item-list match. Add a SKU or rely on the fallback link.');
   return out;
 }
 
 /** A box with nothing to link to a product: no SKU or product id, and not in store only. */
-const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.inStoreOnly;
+const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly;
 /** Claude marked it to check, or it has no product yet (the importer then has to find one by name). */
 const lowConfidence = (h) => h.confidence === 'low' || noProduct(h);
 
@@ -2009,7 +2350,9 @@ function renderInspectorBody() {
   const description = el('textarea', { value: h.description || '', id: 'iDescription', rows: 2, maxLength: 300, placeholder: 'Offer terms the price leaves out, e.g. Excludes Sitka and First Lite.' });
   description.addEventListener('change', () => edit((x) => { x.description = description.value.trim(); }));
   const skus = el('input', { type: 'text', value: h.skus.join(', '), id: 'iSkus', className: 'mono' });
-  skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); }));
+  skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); x.skusEdited = x.skus.length > 0; }));
+  const beans = el('input', { type: 'text', value: (h.beans || []).join(', '), id: 'iBeans', className: 'mono', placeholder: 'e.g. 1005-HV8154' });
+  beans.addEventListener('change', () => edit((x) => { x.beans = beans.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); x.beansEdited = x.beans.length > 0; }));
   const conf = el('select', { id: 'iConf' }, el('option', { value: 'high', textContent: 'High', selected: h.confidence === 'high' }), el('option', { value: 'low', textContent: 'Check', selected: h.confidence === 'low' }));
   conf.addEventListener('change', () => edit((x) => { x.confidence = conf.value; }));
   const reviewed = el('input', { type: 'checkbox', id: 'iReviewed', checked: !!h.reviewed });
@@ -2059,11 +2402,11 @@ function renderInspectorBody() {
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
   if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No SKU yet, so this box is marked to check. Add SKUs${mcp ? ' (Find in AS400 below, ' : ' ('}the item list, or by hand), or tick Reviewed to let the importer find the product by its name and price.` }));
   body.append(
-    field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('SKUs (comma separated)', skus),
+    field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('SKUs (comma separated)', skus), field('Beans (comma separated)', beans),
     el('label', { className: 'check' }, inStore, ' In store only (no online link)'),
     ...suggestionBlock(),
     ...lookupBlock(h, edit),
-    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${makerOf(o)} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.objectIds?.length ? `. No SKU in the item list; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
+    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${makerOf(o)} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.beans?.length ? '. The site finds the product by its bean; add SKUs only to point at particular colours or sizes.' : !h.skus.length && h.objectIds?.length ? `. No SKU in the item list; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
     ...linkFields(h, edit),
     field('Confidence', conf),
     el('div', { className: 'mono', textContent: `x ${h.box.x}  y ${h.box.y}  w ${h.box.w}  h ${h.box.h}` }),
@@ -2423,15 +2766,18 @@ $('drawBtn').addEventListener('click', () => { state.drawing = !state.drawing; u
 // ---------- export ----------
 function updateExport() {
   const d = readDetails();
+  const twin = d.campaign && shared.flyers.find((f) => f.id !== shared.flyerId && f.data.campaign === d.campaign);
   // The first thing still missing before the flyer can be saved, said under the buttons.
   const why = state.example ? 'Open a flyer PDF to save it.'
     : !downloads ? 'Saving files isn\u2019t allowed in this view. Allow downloads for Flyer Studio (its permissions menu), or open it on claude.ai.'
     : !state.pages.some((p) => p.status === 'done') ? 'Generate a page, or draw a box on one, before saving.'
     : !d.campaign ? 'Fill in the campaign code (top of the page) to save.'
     : !/^[a-z0-9_-]+$/.test(d.campaign) ? `The campaign code can only use lowercase letters, numbers, - and _ (no spaces): "${d.campaign}" won\u2019t work.`
+    : twin ? `The shared flyer \u201c${twin.data.title || twin.data.pdfName || 'Untitled flyer'}\u201d already uses the campaign code ${d.campaign}, so its page images would have the same names. Use a different code.`
     : '';
   $('exportBtn').disabled = !!why || state.busy;
   $('exportJsonBtn').disabled = !!why || state.busy;
+  $('adPageBtn').disabled = state.example || !downloads || state.busy || !state.pages.some((p) => p.hotspots.length);
   $('exportWhy').textContent = state.busy ? '' : why;
 }
 // Sale dates are set in Central time; its UTC offset depends on daylight saving.
@@ -2454,7 +2800,7 @@ function flyerData() {
       imageName: imageName(d.campaign, i),
       hotspots: p.hotspots.map((h) => ({
         label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
-        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
+        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.beans?.length ? h.beans : h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
       })),
     })),
   };
@@ -2485,6 +2831,56 @@ async function saving(title, work) {
   finally { exportProgress(null); state.busy = false; updateButtons(); }
 }
 $('exportJsonBtn').addEventListener('click', () => saving('Saving flyer data', () => save(`flyer-${readDetails().campaign}.json`, JSON.stringify(flyerData(), null, 2))));
+
+/**
+ * The page number printed where a box sits on PDF page i: counting on from the first printed page, and
+ * from the PDF page where spreads start, two printed pages per PDF page (left half, then right half).
+ */
+function printedPage(i, box) {
+  const d = readDetails();
+  const first = d.firstPage === '' ? 1 : Number(d.firstPage) || 0;
+  const spreads = Number(d.spreadsFrom) || 0;
+  if (!spreads || i + 1 < spreads) return first + i;
+  const right = box && box.x + box.w / 2 > 50 ? 1 : 0;
+  return first + (spreads - 1) + 2 * (i + 1 - spreads) + right;
+}
+
+const csvCell = (v) => (/[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+
+/**
+ * The flyer in the layout of marketing's Ad Page sheet: one row per bean per printed page, and one row
+ * with no bean for each box that has none (in store only, or no product found). The last column names
+ * the box, so those rows can be found.
+ */
+function adPageCsv() {
+  const d = readDetails();
+  const rows = [];
+  const seen = new Set();
+  state.pages.forEach((p, i) => p.hotspots.forEach((h) => {
+    const page = printedPage(i, h.box);
+    const beans = beansOf(h);
+    for (const bean of beans.length ? beans : ['']) {
+      if (bean && seen.has(`${bean}|${page}`)) continue;
+      seen.add(`${bean}|${page}`);
+      rows.push({ page, cells: [bean, `Page ${page}`, d.startDate, d.endDate, d.title, h.label] });
+    }
+  }));
+  rows.sort((a, b) => a.page - b.page);
+  const header = ['Bean', 'Ad Page', 'Start Date', 'End Date', 'Catalog/Preprint', 'Flyer product'];
+  return [header, ...rows.map((r) => r.cells)].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+$('adPageBtn').addEventListener('click', () => saving('Saving the Ad Page list', async () => {
+  let note = '';
+  if (mcp && state.pages.some((p) => p.hotspots.some((h) => !h.beans?.length && h.skus?.length))) {
+    exportProgress('Finding beans for boxes with SKUs in BigQuery…');
+    try { await fillBoxBeans(); } catch (e) { note = beanError(e); }
+  }
+  const boxes = state.pages.flatMap((p) => p.hotspots);
+  const blank = boxes.filter((h) => !beansOf(h).length).length;
+  await save(`ad-page-${readDetails().campaign || 'flyer'}.csv`, adPageCsv());
+  if (blank || note) setStatus([`${blank} of ${boxes.length} boxes have no bean and are listed with an empty one.`, note].filter(Boolean).join(' '), !!note);
+}));
 $('exportBtn').addEventListener('click', () => saving('Saving images + flyer data', async () => {
   const d = readDetails();
   const total = state.pages.length;
@@ -2594,7 +2990,7 @@ function syncShared() {
   // Details are written only once the flyer's own have arrived, so empty fields never overwrite them.
   if (shared.flyer) {
     const d = readDetails();
-    write(`${flyerPath()}#details`, flyerPath(), { title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate }, true);
+    write(`${flyerPath()}#details`, flyerPath(), { title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, firstPage: d.firstPage, spreadsFrom: d.spreadsFrom }, true);
   }
   const present = new Set();
   state.pages.forEach((p, page) => {
@@ -2689,9 +3085,9 @@ function applyFlyer(snap) {
   if (!snap.exists) { closeShared(); setStatus('That shared flyer was deleted.', true); renderAll(); return; }
   const data = snap.data();
   shared.flyer = data;
-  const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '' };
+  const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '', firstPage: data.firstPage || '', spreadsFrom: data.spreadsFrom || '' };
   shared.synced.set(`${flyerPath()}#details`, JSON.stringify(details));
-  if (!['fTitle', 'fCampaign', 'fStart', 'fEnd'].includes(document.activeElement?.id)) writeDetails(details);
+  if (!DETAIL_FIELDS.includes(document.activeElement?.id)) writeDetails(details);
   $('pdfName').textContent = `Shared · ${data.title || data.pdfName || 'flyer'} · ${data.pageCount || 0} pages`;
   if (state.offers.length && data.itemList?.name && sheet.name !== data.itemList.name) {
     shared.applying = true; sheet.name = data.itemList.name; showItemList(); shared.applying = false;
@@ -2823,7 +3219,7 @@ async function shareFlyer() {
   $('savingTitle').textContent = 'Sharing this flyer';
   state.busy = true; updateButtons();
   try {
-    await shared.db.doc(base).set({ title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, pdfName: state.file?.name || '', pageCount: total, createdBy: shared.me, createdAt: Date.now(), ready: false });
+    await shared.db.doc(base).set({ title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, firstPage: d.firstPage, spreadsFrom: d.spreadsFrom, pdfName: state.file?.name || '', pageCount: total, createdBy: shared.me, createdAt: Date.now(), ready: false });
     for (let i = 0; i < total; i++) {
       exportProgress(`Uploading page ${i + 1} of ${total}…`, i, total);
       const p = state.pages[i];
@@ -2925,6 +3321,7 @@ async function startShared(db, assets, user, room) {
   db.collection('flyers').orderBy('createdAt', 'desc').limit(100).onSnapshot((snap) => {
     shared.flyers = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
     if ($('flyersDlg').open) renderFlyers();
+    updateExport();
     if (reopen && state.example && shared.flyers.some((f) => f.id === reopen && f.data.ready)) openSharedFlyer(reopen);
     reopen = '';
   }, () => {});
@@ -2944,6 +3341,7 @@ setStatus('Open a flyer PDF to begin. Pages without products are fine: Claude re
   [sample, downloads, mcp] = await Promise.all([claude.use('sample'), claude.use('downloads'), claude.use('mcp')]);
   $('adBtn').hidden = !mcp;
   $('lookupBtn').hidden = !mcp;
+  $('listBeans').hidden = !mcp;
   if (sample) {
     const limits = await sample.limits().catch(() => null);
     claudeState = limits?.images ? 'ready' : 'text-only';

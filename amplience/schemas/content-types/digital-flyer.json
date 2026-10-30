@@ -41,6 +41,11 @@
       "type": "string",
       "format": "uri"
     },
+    "showWishlist": {
+      "title": "Show Add to Wishlist",
+      "description": "Adds a heart to each product in the item panel so shoppers can save it to a list.",
+      "type": "boolean"
+    },
     "pages": {
       "title": "Pages",
       "description": "Imported from Flyer Studio.",
@@ -144,5 +149,5 @@
     }
   },
   "required": ["pages"],
-  "propertyOrder": ["title", "campaign", "startDate", "endDate", "disclaimer", "pdfUrl", "pages"]
+  "propertyOrder": ["title", "campaign", "startDate", "endDate", "disclaimer", "pdfUrl", "showWishlist", "pages"]
 }
