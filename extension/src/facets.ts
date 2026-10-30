@@ -58,7 +58,7 @@ const filterOf = (key: string, value: string) =>
   value.includes('"') ? `${key}:"${value.replace(/"/g, '\\"')}"` : `${key}:${value}`;
 
 /** The search filters a link sets, as the site reads them; null when its category's path is unknown. */
-async function facetFilters(link: FallbackLink, name: string | undefined): Promise<string[][] | null> {
+export async function facetFilters(link: FallbackLink, name: string | undefined): Promise<string[][] | null> {
   const filters: string[][] = [];
   if (link.category) {
     const path = name ? await categoryPath(name) : null;

@@ -14,6 +14,7 @@ import {
 import { linkAttributeNames, loadUrlRules, urlRulesLoaded } from './urlRules';
 import { categoryName, findCategories, loadCategories, type Category } from './categories';
 import { filterValues, linkCount } from './facets';
+import { checkFlyer, type Finding } from './check';
 
 /**
  * Edits the flyer already saved on the item: page images with their hotspots drawn on top. Boxes can
@@ -1028,6 +1029,76 @@ function wireHints() {
   }
 }
 
+// ---------- flyer check ----------
+
+// Bumped to drop the results of a check still running (closed, or the flyer replaced).
+let checkRun = 0;
+
+function resetCheck() {
+  checkRun++;
+  $('edChecks').hidden = true;
+  ($('edCheck') as HTMLButtonElement).disabled = false;
+}
+
+/** The results of checkFlyer: each finding opens its page and hotspot. */
+function showFindings(findings: Finding[]) {
+  const problems = findings.filter((f) => f.level === 'problem').length;
+  const checks = findings.length - problems;
+  const hotspotCount = state.pages.reduce((n, page) => n + page.hotspots.length, 0);
+  $('edCheckSummary').textContent = findings.length
+    ? [problems && count(problems, 'problem'), checks && `${checks} to check`].filter(Boolean).join(' · ') +
+      '. Pick one to open it.'
+    : `No problems found in ${count(state.pages.length, 'page')} and ${count(hotspotCount, 'hotspot')}.`;
+  $('edCheckList').replaceChildren(
+    ...findings.map((finding) => {
+      const open = el(
+        'button',
+        { type: 'button' },
+        el('span', {
+          className: `chip ${finding.level === 'problem' ? 'none' : 'review'}`,
+          textContent: finding.level === 'problem' ? 'Problem' : 'Check',
+        }),
+        el('span', {
+          className: 'where',
+          textContent:
+            finding.hotspot < 0
+              ? `Page ${finding.page + 1}`
+              : `Page ${finding.page + 1} · ${finding.hotspot + 1}. ${finding.label}`,
+        }),
+        el('span', { className: 'what', textContent: finding.message }),
+      );
+      open.addEventListener('click', () => {
+        goTo(finding.page);
+        // Boxes deleted since the check leave their page open.
+        if (finding.hotspot >= 0 && finding.hotspot < hotspots().length) select(finding.hotspot);
+      });
+      return el('li', {}, open);
+    }),
+  );
+}
+
+/** Checks the flyer as edited, unsaved edits included. */
+async function runCheck() {
+  const run = ++checkRun;
+  const button = $('edCheck') as HTMLButtonElement;
+  button.disabled = true;
+  button.textContent = 'Check again';
+  $('edChecks').hidden = false;
+  $('edCheckList').replaceChildren();
+  const progress = (text: string) => {
+    if (run === checkRun) $('edCheckSummary').textContent = text;
+  };
+  progress('Checking the flyer…');
+  try {
+    const findings = await checkFlyer(structuredClone(state.pages), progress);
+    if (run === checkRun) showFindings(findings);
+  } catch (error) {
+    progress(`Scheels Search could not be reached (${(error as Error).message}). Try again in a moment.`);
+  } finally {
+    if (run === checkRun) button.disabled = false;
+  }
+}
+
 let wired = false;
 
 /** Shows the editor for `pages` (the field's current value). */
@@ -1057,6 +1128,8 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
       state.drawing = !state.drawing;
       render();
     });
+    $('edCheck').addEventListener('click', runCheck);
+    $('edCheckClose').addEventListener('click', resetCheck);
     // Leaving the extension (to click Save, another field, or another tab) writes the edits. The
     // pause lets a field being left record its last edit first.
     const leave = () => window.setTimeout(applyChanges, 0);
@@ -1072,6 +1145,8 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
   }
   unapplied = false;
   setStatus('');
+  resetCheck();
+  ($('edCheck') as HTMLButtonElement).textContent = 'Check flyer';
   render();
 }
 

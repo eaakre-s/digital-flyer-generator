@@ -78,23 +78,52 @@ export async function searchBatch(batch: string[], { page = 1, pageSize = CANDID
   });
 }
 
-/** Top candidates for each query, in order. `onProgress` gets the number of queries answered so far. */
-export async function searchProducts(queries: string[], onProgress?: (done: number) => void): Promise<Candidate[][]> {
-  const batches: string[][] = [];
+/**
+ * Any number of search queries, sent eight to a request and a few requests at a time; each result as
+ * Scheels Search returns it, in order. `onProgress` gets the number of queries answered so far.
+ */
+export async function searchMany(queries: Record<string, unknown>[], onProgress?: (done: number) => void): Promise<any[]> {
+  const batches: Record<string, unknown>[][] = [];
   for (let i = 0; i < queries.length; i += QUERIES_PER_REQUEST) batches.push(queries.slice(i, i + QUERIES_PER_REQUEST));
-  const results: Candidate[][][] = new Array(batches.length);
+  const results: any[][] = new Array(batches.length);
   let next = 0;
   let done = 0;
   const worker = async () => {
     while (next < batches.length) {
       const b = next++;
-      results[b] = await searchBatch(batches[b]);
+      const res = await fetch(SEARCH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queries: batches[b].map((query) => ({
+            indexName: INDEX,
+            branchName: 'search',
+            query: '',
+            page: 1,
+            trackEvents: false,
+            dynamicRerank: false,
+            ...query,
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error(`Scheels Search answered ${res.status}.`);
+      const data = await res.json();
+      results[b] = batches[b].map((_, j) => data?.results?.[j] ?? {});
       done += batches[b].length;
       onProgress?.(done);
     }
   };
   await Promise.all(Array.from({ length: Math.min(REQUESTS_AT_ONCE, batches.length) }, worker));
   return results.flat();
+}
+
+/** Top candidates for each query, in order. `onProgress` gets the number of queries answered so far. */
+export async function searchProducts(queries: string[], onProgress?: (done: number) => void): Promise<Candidate[][]> {
+  const results = await searchMany(
+    queries.map((query) => ({ query, pageSize: CANDIDATES })),
+    onProgress,
+  );
+  return results.map((result) => ((result.hits ?? []) as unknown[]).map(toCandidate).filter((c): c is Candidate => c !== null));
 }
 
 /**
