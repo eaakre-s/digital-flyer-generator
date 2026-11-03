@@ -350,6 +350,37 @@
       .checks .chip { grid-row: span 2; justify-self: stretch; justify-content: center; }
       .checks .where { font-weight: 500; }
       .checks .what { font-size: 13px; color: var(--ink-2); }
+
+      /* ---------- page actions ---------- */
+      #edExportNote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+      fieldset.choices { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: 0; }
+      fieldset.choices legend { padding: 0 0 4px; font-size: 14px; font-weight: 600; }
+      .namefind { display: flex; gap: 8px; align-items: flex-end; }
+      .namefind button { min-height: var(--field); }
+      ul.exportpages { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+      ul.exportpages li + li { border-top: 1px solid var(--line); }
+      ul.exportpages button {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr);
+        gap: 0 10px;
+        justify-items: start;
+        width: 100%;
+        min-height: 0;
+        padding: 6px 10px;
+        border: 0;
+        border-radius: 0;
+        background: none;
+        font-weight: 400;
+        text-align: left;
+      }
+      ul.exportpages button:not(:disabled):hover { background: var(--panel); }
+      ul.exportpages button[aria-pressed='true'] { background: var(--accent-soft); }
+      ul.exportpages img, ul.exportpages .nothumb { grid-row: span 2; width: 56px; }
+      ul.exportpages .name { font-weight: 500; }
+      ul.exportpages .muted { font-size: 12px; overflow-wrap: anywhere; }
+      .nothumb { display: grid; place-items: center; aspect-ratio: 3 / 4; font-size: 10px; color: var(--ink-3); background: var(--panel-2); border-radius: 2px; }
+      .chosen { display: flex; gap: 10px; align-items: center; padding: 8px 10px; background: var(--panel); border-radius: var(--radius); font-size: 13px; overflow-wrap: anywhere; }
+      .chosen img, .chosen .nothumb { width: 48px; flex: none; }
     </style>
   </head>
   <body>
@@ -371,8 +402,10 @@
         </div>
         <button id="edDraw" type="button" aria-pressed="false">+ Draw box</button>
         <button id="edCheck" type="button">Check flyer</button>
+        <button id="edExport" type="button">Export for Flyer Studio</button>
         <span id="edStatus" class="savestate" data-ed-status role="status" aria-live="polite"></span>
       </div>
+      <p id="edExportNote" class="small" role="status" hidden></p>
       <div id="edChecks" class="checks" hidden>
         <div class="head">
           <p id="edCheckSummary" role="status" aria-live="polite"></p>

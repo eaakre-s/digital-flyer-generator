@@ -31,11 +31,14 @@ export interface StudioPage {
   hotspots: Hotspot[];
 }
 
-export interface StudioFlyer {
+export interface FlyerDetails {
   title: string;
   campaign: string;
   startDate: string;
   endDate: string;
+}
+
+export interface StudioFlyer extends FlyerDetails {
   pages: StudioPage[];
 }
 
@@ -105,6 +108,20 @@ export function parseStudioExport(json: string): StudioFlyer {
   };
 }
 
+/**
+ * The saved pages in Flyer Studio's export format, so they can go back into Studio (or into another
+ * item). Each page is named by its image; a page with no image has none.
+ */
+export function toStudioExport(details: FlyerDetails, pages: FlyerPage[]): StudioFlyer {
+  return {
+    ...details,
+    pages: pages.map((page) => ({
+      imageName: page.image?.name ?? '',
+      hotspots: page.hotspots.map((h) => ({ ...h, fallback: toFallbackLink(h.fallback) })),
+    })),
+  };
+}
+
 export interface MediaSettings {
   endpoint: string;
   defaultHost: string;
@@ -119,7 +136,10 @@ const IMAGE_LINK_SCHEMA = 'http://bigcontent.io/cms/schema/v1/core#/definitions/
  */
 export async function findImage(name: string, media: MediaSettings): Promise<ImageLink | null> {
   try {
-    const url = `https://${media.defaultHost}/i/${media.endpoint}/${encodeURIComponent(name)}.json?metadata=true`;
+    // The media server caches "not found" for half an hour, so a name looked up before its image was
+    // published would keep failing; a query of its own each time asks the server afresh.
+    const path = `https://${media.defaultHost}/i/${media.endpoint}/${encodeURIComponent(name)}.json`;
+    const url = `${path}?metadata=true&check=${Date.now()}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const meta = await res.json();

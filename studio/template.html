@@ -37,6 +37,9 @@ header.top{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:12px 20px;align-item
 .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .filebtn:focus-within{outline:3px solid var(--focus);outline-offset:2px}
 .filebtn small{font-weight:500;color:var(--ink-2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filebtn:has(input:disabled){opacity:.5;cursor:default}
+.filebtn input:disabled{cursor:default}
+.export .filebtn{justify-content:center}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel);padding:8px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px}
 .btn:hover:not(:disabled){border-color:var(--ink-2)}
 .btn:disabled{opacity:.45;cursor:default}
@@ -127,6 +130,14 @@ ul.flyers li[aria-current="true"]{border-color:var(--red)}
 ul.flyers .name{font-weight:700}
 ul.flyers .sub{grid-column:1;font-size:13px;color:var(--ink-2)}
 ul.flyers .acts{grid-column:2;grid-row:1/span 2;display:flex;gap:6px}
+ul.updates{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.updates li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px 14px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+ul.updates .thumbs{display:flex;align-items:center;gap:6px;color:var(--ink-2)}
+ul.updates img{display:block;width:64px;border:1px solid var(--line);border-radius:4px;background:#fff}
+ul.updates .what{display:flex;flex-direction:column;gap:6px}
+ul.updates .sub{font-size:13px;color:var(--ink-2)}
+ul.updates fieldset{display:flex;flex-wrap:wrap;gap:4px 16px;border:0;margin:0;padding:0}
+ul.updates label{display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer}
 .export{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding:12px}
 .export p{margin:0;font-size:13px;color:var(--ink-2)}
 .export .exportwhy{color:var(--warn)}
@@ -195,6 +206,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       <button class="btn" id="flyersBtn" type="button" aria-haspopup="dialog" hidden>Shared flyers</button>
       <span class="syncstate" id="syncState" role="status"></span>
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
+      <label class="filebtn" for="revisedInput" id="revisedBtn" title="Compare a revised PDF from Creative with this flyer, then add, replace and remove pages to match it" hidden>Update from revised PDF<input id="revisedInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="sheetInput">Item list (optional) <small id="sheetName">None</small><input id="sheetInput" type="file" accept=".xlsx,.xls,.csv"></label>
       <button class="btn" id="sheetCols" type="button" aria-haspopup="dialog" hidden>Columns</button>
       <button class="btn" id="listBtn" type="button" aria-haspopup="dialog" hidden>View item list</button>
@@ -240,6 +252,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
         <button class="btn" id="lookupBtn" type="button" title="Look up this page's boxes without SKUs in the AS400 SKU file" hidden>Find in AS400</button>
         <button class="btn" id="tidyBtn" type="button" title="Give boxes in the same row or column the same edges and size">Line up boxes</button>
         <button class="btn" id="drawBtn" type="button" aria-pressed="false">Draw box</button>
+        <button class="btn" id="deletePageBtn" type="button">Delete page</button>
       </div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
@@ -258,8 +271,10 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="body" id="inspector"></div>
     <div class="export">
       <button class="btn primary" id="exportBtn" type="button" disabled>Save images + flyer data (.zip)</button>
+      <button class="btn" id="freshBtn" type="button" hidden>Save new page images + flyer data (.zip)</button>
       <button class="btn" id="exportJsonBtn" type="button" disabled>Save flyer data only (.json)</button>
       <button class="btn" id="adPageBtn" type="button" disabled>Save Ad Page list (.csv)</button>
+      <label class="filebtn" for="amplienceInput" title="Load the hotspots saved by “Export for Flyer Studio” in the Digital Flyer item, with the edits made in Amplience">Load hotspots from Amplience (.json)<input id="amplienceInput" type="file" accept=".json,application/json" disabled></label>
       <p class="exportwhy" id="exportWhy" role="status"></p>
       <p>Upload the images to ECOM Creative › Content Pages › Digital Flyers, then import the flyer data in the Digital Flyer item.</p>
     </div>
@@ -291,6 +306,23 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="actions"><button class="btn primary" id="shareBtn" type="button">Share the open flyer with your team</button></div>
     <p class="sheetnote" id="shareWhy" role="status"></p>
     <ul class="flyers" id="flyersList"></ul>
+  </div>
+</dialog>
+
+<dialog class="guide colmap" id="updateDlg" aria-labelledby="updateTitle">
+  <div class="guidehead">
+    <h2 id="updateTitle">Update from the revised PDF</h2>
+    <button class="btn" id="updateClose" type="button">Cancel</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead" id="updateLead"></p>
+    <div class="actions" id="updateBulk">
+      <button class="btn" id="updateKeepAll" type="button">Keep the hotspots on every changed page</button>
+      <button class="btn" id="updateRedoAll" type="button">Start every changed page over</button>
+    </div>
+    <ul class="updates" id="updateList"></ul>
+    <p class="sheetnote" id="updateNote" role="status"></p>
+    <div class="actions"><button class="btn primary" id="updateApply" type="button">Update the flyer</button></div>
   </div>
 </dialog>
 
@@ -422,7 +454,9 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <h3 class="sub">Working on a flyer together</h3>
     <p>Open the PDF, then <b>Shared flyers › Share the open flyer with your team</b>. Sharing uploads the pages, your boxes and the item list, and needs Editor access to Flyer Studio; teammates with Contributor access then open it from <b>Shared flyers</b>, without the PDF. Everyone sees the same boxes, and edits show up for the others as they are made (two people changing the same box: the last change wins). The page list shows who is on which page, and a page someone is generating is skipped by everyone else's Generate. The status beside the buttons says when everything is saved.</p>
     <h3 class="sub">Fixing a live flyer</h3>
-    <p>Open the Digital Flyer item: the Pages field shows the saved flyer. Move or resize boxes, change a hotspot's products with <b>Find product</b>, or draw and delete boxes, then save the item. For a new proof from Creative, repeat steps 1 to 5 here and use <b>Replace with a new Flyer Studio export</b> in the item.</p>
+    <p>Open the Digital Flyer item: the Pages field shows the saved flyer. Move or resize boxes, change a hotspot's products with <b>Find product</b>, or draw and delete boxes, then save the item. Its <b>Page</b> panel adds, replaces and deletes pages, from an image in Content Hub or a page of a Flyer Studio export.</p>
+    <h3 class="sub">When Creative sends a revised PDF</h3>
+    <p>If hotspots were fixed in Amplience since the flyer was imported, first click <b>Export for Flyer Studio</b> in the item, then <b>Load hotspots from Amplience</b> here, so those fixes carry over. Then click <b>Update from revised PDF</b>. Flyer Studio compares the two PDFs page by page: unchanged pages keep their hotspots, each changed page keeps its hotspots (marked to check) or starts over as you choose, new pages are added and pages no longer in the PDF are removed. Pages keep their image names and new pictures get new ones (<code>flyer-biggame26-p12-v2</code>), so nothing already published is overwritten. Generate the pages it fills in under <b>Pages to generate</b>, click <b>Save new page images</b>, upload and publish just those, and import the flyer data into the item with <b>Replace with a new Flyer Studio export</b>. <b>Delete page</b> removes a single page.</p>
   </div>
 </dialog>
 
@@ -463,9 +497,25 @@ function persist() {
   if (shared.flyerId) { syncShared(); return; }
   const key = storeKey(); if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify({ details: readDetails(), pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' })) }));
+    localStorage.setItem(key, JSON.stringify({ details: readDetails(), pdfPages: state.pdf?.numPages ?? state.pages.length, pages: state.pages.map((p) => ({ hotspots: p.hotspots, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '', ...pageFields(p) })) }));
   } catch {}
 }
+
+// ---------- page image names ----------
+// A page keeps the image name it was first saved under, so adding, removing or replacing pages never
+// renames the pages around it: their images are already published under those names. Names count
+// pages from 1 (p12), and a new picture of a page gets the next free version (p12-v2). A page with no
+// stored name is named by its place, as every page is until its flyer's first page change.
+// fresh: the page's picture is new since the last update (only those images need uploading);
+// replaces: the image name of the page it took the place of. pdfPage: the open PDF's page it shows.
+const PAGE_FIELDS = ['pdfPage', 'nameNumber', 'nameVersion', 'fresh', 'replaces'];
+const pageFields = (p) => Object.fromEntries(PAGE_FIELDS.filter((k) => p[k] !== undefined && p[k] !== null && p[k] !== '' && p[k] !== false).map((k) => [k, p[k]]));
+const pageNumber = (p, i) => ({ nameNumber: p.nameNumber || i + 1, nameVersion: p.nameVersion || 1 });
+function imageName(campaign, p, i) {
+  const { nameNumber, nameVersion } = pageNumber(p, i);
+  return `flyer-${campaign}-p${String(nameNumber).padStart(2, '0')}${nameVersion > 1 ? `-v${nameVersion}` : ''}`;
+}
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function restore() {
   try { const raw = localStorage.getItem(storeKey()); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
@@ -1550,20 +1600,22 @@ $('pdfInput').addEventListener('change', async (ev) => {
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
     state.pages.forEach((p) => p.url && URL.revokeObjectURL(p.url));
     Object.assign(state, { example: false, file, pdf, current: 0, selected: -1, multi: new Set() });
-    state.pages = Array.from({ length: pdf.numPages }, () => ({ hotspots: [], status: 'empty', error: '', items: null, url: '' }));
     const saved = restore();
-    if (saved?.pages?.length === pdf.numPages) {
-      saved.pages.forEach((p, i) => Object.assign(state.pages[i], {
+    // Saved work belongs to this PDF when it was saved against as many PDF pages (pages deleted since are left out).
+    if (saved?.pages?.length && (saved.pdfPages ?? saved.pages.length) === pdf.numPages) {
+      state.pages = saved.pages.map((p) => ({
         hotspots: (p.hotspots || []).map((h) => ({ ...h, id: h.id || newId('h'), skus: (h.skus || []).map(normalizeSku), fallback: toLink(h.fallback, h.label) })),
         status: p.status || 'empty',
         error: p.error || (p.status === 'error' ? 'Generating this page failed in an earlier session. Generate it again.' : ''),
+        items: null, url: '', ...pageFields(p),
       }));
       writeDetails(saved.details);
-    } else if (replacing) {
-      writeDetails({});
+    } else {
+      state.pages = Array.from({ length: pdf.numPages }, () => ({ hotspots: [], status: 'empty', error: '', items: null, url: '' }));
+      if (replacing) writeDetails({});
     }
     if (relinkHotspots()) persist();
-    $('pdfName').textContent = `${file.name} · ${pdf.numPages} pages`;
+    $('pdfName').textContent = `${file.name} · ${plural(state.pages.length, 'page')}`;
     $('exampleBanner').hidden = true;
     setStatus(saved ? `Opened ${file.name}. Your earlier work on it was restored.` : `Opened ${file.name}: ${pdf.numPages} pages.`);
     await showPage(0);
@@ -1572,9 +1624,14 @@ $('pdfInput').addEventListener('change', async (ev) => {
   }
 });
 
+// The PDF page a page shows: pages keep theirs when pages before them are deleted.
+const pdfIndex = (i) => state.pages[i]?.pdfPage ?? i;
 async function pageCanvas(i, width) {
-  if (!state.pdf) return imageCanvas(state.pages[i].url, width);
-  const page = await state.pdf.getPage(i + 1);
+  return state.pdf ? renderPdfPage(state.pdf, pdfIndex(i), width) : imageCanvas(state.pages[i].url, width);
+}
+/** Page `index` (from 0) of a PDF, drawn `width` pixels wide on white. */
+async function renderPdfPage(pdf, index, width) {
+  const page = await pdf.getPage(index + 1);
   const base = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: width / base.width });
   const canvas = document.createElement('canvas');
@@ -1589,18 +1646,23 @@ async function textItems(i) {
   const p = state.pages[i];
   if (p.items) return p.items;
   if (!state.pdf) return [];
-  const page = await state.pdf.getPage(i + 1);
+  p.items = await readTextItems(state.pdf, pdfIndex(i));
+  return p.items;
+}
+/** The text on page `index` (from 0) of a PDF, each piece placed in percent of the page. */
+async function readTextItems(pdf, index) {
+  const page = await pdf.getPage(index + 1);
   const vp = page.getViewport({ scale: 1 });
   const content = await page.getTextContent();
   const pct = (v, of) => round1((v / of) * 100);
-  p.items = [];
+  const items = [];
   for (const item of content.items) {
     if (!item.str || !item.str.trim()) continue;
     const [x, baseline] = vp.convertToViewportPoint(item.transform[4], item.transform[5]);
     const h = item.height || Math.hypot(item.transform[2], item.transform[3]);
-    p.items.push({ id: p.items.length + 1, text: item.str.trim(), x: pct(x, vp.width), y: pct(baseline - h, vp.height), w: pct(item.width, vp.width), h: pct(h, vp.height) });
+    items.push({ id: items.length + 1, text: item.str.trim(), x: pct(x, vp.width), y: pct(baseline - h, vp.height), w: pct(item.width, vp.width), h: pct(h, vp.height) });
   }
-  return p.items;
+  return items;
 }
 
 // Where photos sit on the page, read from the PDF's drawing commands: each image is the unit
@@ -1609,7 +1671,11 @@ async function imageRegions(i) {
   const p = state.pages[i];
   if (p.regions) return p.regions;
   if (!state.pdf) return [];
-  const page = await state.pdf.getPage(i + 1);
+  p.regions = await readImageRegions(state.pdf, pdfIndex(i));
+  return p.regions;
+}
+async function readImageRegions(pdf, index) {
+  const page = await pdf.getPage(index + 1);
   const vp = page.getViewport({ scale: 1 });
   const { fnArray, argsArray } = await page.getOperatorList();
   const O = pdfjsLib.OPS;
@@ -1636,8 +1702,7 @@ async function imageRegions(i) {
       if (w >= 3 && h >= 3 && w * h < 8500) found.push({ x: round1(x), y: round1(y), w: round1(w), h: round1(h) });
     }
   });
-  p.regions = found.sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 60).map((r, n) => ({ id: n + 1, ...r }));
-  return p.regions;
+  return found.sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 60).map((r, n) => ({ id: n + 1, ...r }));
 }
 
 async function ensurePreview(i) {
@@ -2201,7 +2266,8 @@ async function fillFromArea(i, h) {
 
 // ---------- checks ----------
 function problemsFor(h, items) {
-  if (h.reviewed) return [];
+  // Reviewed clears every flag but a missing name: Amplience refuses a box without one.
+  if (h.reviewed) return String(h.label || '').trim() ? [] : ['Give the product a name.'];
   const out = [];
   const owned = (items || []).filter((t) => h.textItemIds.includes(t.id));
   if (owned.length) {
@@ -2613,6 +2679,7 @@ function toggleMulti(idx) {
 async function showPage(i) {
   if (state.example) return;
   state.multi = new Set();
+  resetDeletePage();
   state.current = clamp(i, 0, state.pages.length - 1); state.selected = -1;
   setPresence();
   renderRail(); renderStage(); updateButtons();
@@ -2639,6 +2706,9 @@ function updateButtons() {
   $('lookupBtn').disabled = state.example || state.busy || readOnly();
   $('tidyBtn').disabled = state.example || state.busy || readOnly();
   $('drawBtn').disabled = readOnly();
+  $('deletePageBtn').disabled = state.example || state.busy || readOnly() || state.pages.length < 2;
+  $('revisedBtn').hidden = state.example || readOnly() || (!!shared.flyerId && !shared.assets);
+  $('revisedInput').disabled = state.busy;
   $('matchBtn').disabled ||= readOnly();
   $('prevBtn').disabled = state.example || state.current === 0;
   $('nextBtn').disabled = state.example || state.current >= state.pages.length - 1;
@@ -2767,6 +2837,7 @@ $('drawBtn').addEventListener('click', () => { state.drawing = !state.drawing; u
 function updateExport() {
   const d = readDetails();
   const twin = d.campaign && shared.flyers.find((f) => f.id !== shared.flyerId && f.data.campaign === d.campaign);
+  const unnamed = state.pages.flatMap((p, i) => p.hotspots.flatMap((h, j) => (String(h.label || '').trim() ? [] : [`${i === 0 ? 'the cover' : `page ${i + 1}`}, box ${j + 1}`])));
   // The first thing still missing before the flyer can be saved, said under the buttons.
   const why = state.example ? 'Open a flyer PDF to save it.'
     : !downloads ? 'Saving files isn\u2019t allowed in this view. Allow downloads for Flyer Studio (its permissions menu), or open it on claude.ai.'
@@ -2774,9 +2845,13 @@ function updateExport() {
     : !d.campaign ? 'Fill in the campaign code (top of the page) to save.'
     : !/^[a-z0-9_-]+$/.test(d.campaign) ? `The campaign code can only use lowercase letters, numbers, - and _ (no spaces): "${d.campaign}" won\u2019t work.`
     : twin ? `The shared flyer \u201c${twin.data.title || twin.data.pdfName || 'Untitled flyer'}\u201d already uses the campaign code ${d.campaign}, so its page images would have the same names. Use a different code.`
+    : unnamed.length ? `Every box needs a product name for Amplience: ${unnamed.slice(0, 3).join('; ')}${unnamed.length > 3 ? ` and ${unnamed.length - 3} more` : ''} ${unnamed.length === 1 ? 'has' : 'have'} none.`
     : '';
   $('exportBtn').disabled = !!why || state.busy;
   $('exportJsonBtn').disabled = !!why || state.busy;
+  $('freshBtn').hidden = state.example || !state.pages.some((p) => p.fresh);
+  $('freshBtn').disabled = !!why || state.busy;
+  $('amplienceInput').disabled = state.example || state.busy || readOnly();
   $('adPageBtn').disabled = state.example || !downloads || state.busy || !state.pages.some((p) => p.hotspots.length);
   $('exportWhy').textContent = state.busy ? '' : why;
 }
@@ -2789,7 +2864,6 @@ function centralOffset(day) {
     return m ? `${m[1]}${m[2].padStart(2, '0')}:00` : '-06:00';
   } catch { return '-06:00'; }
 }
-const imageName = (campaign, i) => `flyer-${campaign}-p${String(i + 1).padStart(2, '0')}`;
 function flyerData() {
   const d = readDetails();
   return {
@@ -2797,7 +2871,7 @@ function flyerData() {
     startDate: d.startDate ? `${d.startDate}T00:00:00${centralOffset(d.startDate)}` : '', endDate: d.endDate ? `${d.endDate}T23:59:59${centralOffset(d.endDate)}` : '',
     pdfFile: state.file?.name || '',
     pages: state.pages.map((p, i) => ({
-      imageName: imageName(d.campaign, i),
+      imageName: imageName(d.campaign, p, i), ...(p.replaces ? { replaces: p.replaces } : {}),
       hotspots: p.hotspots.map((h) => ({
         label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
         box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.beans?.length ? h.beans : h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
@@ -2881,21 +2955,353 @@ $('adPageBtn').addEventListener('click', () => saving('Saving the Ad Page list',
   await save(`ad-page-${readDetails().campaign || 'flyer'}.csv`, adPageCsv());
   if (blank || note) setStatus([`${blank} of ${boxes.length} boxes have no bean and are listed with an empty one.`, note].filter(Boolean).join(' '), !!note);
 }));
-$('exportBtn').addEventListener('click', () => saving('Saving images + flyer data', async () => {
+/** A .zip of the images of pages `indices` (by their image names) and the whole flyer's data. */
+async function saveImagesZip(indices, filename) {
   const d = readDetails();
-  const total = state.pages.length;
   try {
     const zip = new JSZip();
-    for (let i = 0; i < total; i++) {
-      exportProgress(`Preparing page image ${i + 1} of ${total}…`, i, total);
-      zip.file(`${imageName(d.campaign, i)}.jpg`, state.pdf ? await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86) : await (await fetch(state.pages[i].url)).blob());
+    for (const [k, i] of indices.entries()) {
+      exportProgress(`Preparing page image ${k + 1} of ${indices.length}…`, k, indices.length);
+      zip.file(`${imageName(d.campaign, state.pages[i], i)}.jpg`, state.pdf ? await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86) : await (await fetch(state.pages[i].url)).blob());
     }
     zip.file(`flyer-${d.campaign}.json`, JSON.stringify(flyerData(), null, 2));
     exportProgress('Compressing…', 0, 100);
     const blob = await zip.generateAsync({ type: 'blob' }, (m) => exportProgress(`Compressing… ${Math.floor(m.percent)}%`, m.percent, 100));
-    await save(`flyer-${d.campaign}.zip`, blob);
+    await save(filename, blob);
   } catch { setStatus('The images could not be prepared.', true); }
-}));
+}
+$('exportBtn').addEventListener('click', () => saving('Saving images + flyer data', () => saveImagesZip(state.pages.map((_, i) => i), `flyer-${readDetails().campaign}.zip`)));
+$('freshBtn').addEventListener('click', () => saving('Saving new page images + flyer data', () => saveImagesZip(state.pages.flatMap((p, i) => (p.fresh ? [i] : [])), `flyer-${readDetails().campaign}-new-pages.zip`)));
+
+// ---------- page changes: delete a page, update from a revised PDF ----------
+// Creative's revisions come as a whole new PDF. Its pages are paired with the flyer's in order, by
+// their words (or, on pages with little text, a tiny picture of each), so inserted and removed pages
+// show up as unpaired. Unchanged pages keep their hotspots and image name; each changed page keeps its
+// hotspots (marked to check) or starts over, as the person chooses; new pages start empty.
+
+const THUMB_W = 32, THUMB_H = 40;
+/** A tiny grey picture of a page, for telling pages apart when they have little text. */
+function thumbPixels(canvas) {
+  const small = el('canvas', { width: THUMB_W, height: THUMB_H });
+  const ctx = small.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0, THUMB_W, THUMB_H);
+  const d = ctx.getImageData(0, 0, THUMB_W, THUMB_H).data;
+  const grey = new Float32Array(THUMB_W * THUMB_H);
+  for (let k = 0; k < grey.length; k++) grey[k] = (d[4 * k] * 0.299 + d[4 * k + 1] * 0.587 + d[4 * k + 2] * 0.114) / 255;
+  return grey;
+}
+function pixelDiff(a, b) { let sum = 0; for (let k = 0; k < a.length; k++) sum += Math.abs(a[k] - b[k]); return sum / a.length; }
+function wordBag(items) {
+  const bag = new Map();
+  for (const it of items || []) for (const w of it.text.toLowerCase().split(/[^a-z0-9$.%]+/)) if (w.length > 1) bag.set(w, (bag.get(w) || 0) + 1);
+  return bag;
+}
+const bagSize = (bag) => [...bag.values()].reduce((a, b) => a + b, 0);
+const MIN_WORDS = 15;    // fewer words than this and a page is told apart by its picture
+const SAME_PAGE = 0.4;   // pages at least this alike are the same page, changed or not
+/** How alike two pages are (0 to 1), and whether nothing on them changed. */
+function pageLikeness(a, b) {
+  const diff = pixelDiff(a.pixels, b.pixels);
+  const sizes = bagSize(a.words) + bagSize(b.words);
+  if (bagSize(a.words) < MIN_WORDS || bagSize(b.words) < MIN_WORDS) return { score: clamp(1 - diff * 5, 0, 1), unchanged: diff < 0.015 };
+  let common = 0;
+  for (const [w, n] of a.words) common += Math.min(n, b.words.get(w) || 0);
+  const score = (2 * common) / sizes;
+  return { score, unchanged: score === 1 && diff < 0.02 };
+}
+/**
+ * The old page each new page is, pairing pages in order so the pairs are as alike as possible overall;
+ * null for a page with no pair (a new page). Old pages left out were removed. Likeness counts to the
+ * 8th power, so pairing a page with its exact match beats pairing several pages with near ones (pages
+ * that share a layout and most of their wording).
+ */
+function pairPages(before, after) {
+  const like = before.map((a) => after.map((b) => pageLikeness(a, b)));
+  const gain = (s) => s.score ** 8;
+  const best = Array.from({ length: before.length + 1 }, () => new Float64Array(after.length + 1));
+  for (let i = 1; i <= before.length; i++) for (let j = 1; j <= after.length; j++) {
+    const s = like[i - 1][j - 1];
+    best[i][j] = Math.max(best[i - 1][j], best[i][j - 1], s.score >= SAME_PAGE ? best[i - 1][j - 1] + gain(s) : -Infinity);
+  }
+  const pairs = new Array(after.length).fill(null);
+  for (let i = before.length, j = after.length; i > 0 && j > 0;) {
+    const s = like[i - 1][j - 1];
+    if (s.score >= SAME_PAGE && best[i][j] === best[i - 1][j - 1] + gain(s)) { pairs[j - 1] = { old: i - 1, unchanged: s.unchanged }; i--; j--; }
+    else if (best[i][j] === best[i - 1][j]) i--;
+    else j--;
+  }
+  return pairs;
+}
+async function readPages(count, read, progress) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    progress(i);
+    const [items, canvas] = await read(i);
+    out.push({ words: wordBag(items), pixels: thumbPixels(canvas), preview: canvas.toDataURL('image/jpeg', 0.7) });
+  }
+  return out;
+}
+
+const update = { pdf: null, file: null, rows: [], removed: [], choices: new Map() };
+const keepToCheck = (hotspots) => hotspots.map((h) => ({ ...h, textItemIds: [], reviewed: false, confidence: 'low' }));
+
+$('revisedInput').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file || state.example || state.busy || readOnly()) return;
+  $('savingTitle').textContent = 'Comparing the revised PDF';
+  state.busy = true; updateButtons();
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const total = state.pages.length + pdf.numPages;
+    const before = await readPages(state.pages.length, async (i) => [await textItems(i), await pageCanvas(i, 80)],
+      (i) => exportProgress(`Reading this flyer’s page ${i + 1} of ${state.pages.length}…`, i, total));
+    const after = await readPages(pdf.numPages, async (j) => [await readTextItems(pdf, j), await renderPdfPage(pdf, j, 80)],
+      (j) => exportProgress(`Reading the revised PDF’s page ${j + 1} of ${pdf.numPages}…`, state.pages.length + j, total));
+    const pairs = pairPages(before, after);
+    const paired = new Set(pairs.filter(Boolean).map((p) => p.old));
+    Object.assign(update, {
+      pdf, file, choices: new Map(),
+      rows: pairs.map((p, j) => ({ j, old: p ? p.old : null, unchanged: !!p?.unchanged, before: p ? before[p.old].preview : '', after: after[j].preview })),
+      removed: state.pages.flatMap((_, i) => (paired.has(i) ? [] : [{ old: i, before: before[i].preview }])),
+    });
+    exportProgress(null);
+    renderUpdate();
+    $('updateDlg').showModal();
+  } catch (e) {
+    exportProgress(null);
+    setStatus(`That PDF could not be compared with this flyer (${e?.message || e}). Check it is the revised flyer PDF.`, true);
+  } finally {
+    state.busy = false; updateButtons();
+  }
+});
+
+const pageLabel = (i) => (i === 0 ? 'the cover' : `page ${i + 1}`);
+function renderUpdate() {
+  const changed = update.rows.filter((r) => r.old !== null && !r.unchanged);
+  const added = update.rows.filter((r) => r.old === null);
+  const same = update.rows.length - changed.length - added.length;
+  $('updateLead').textContent = `${update.file.name} has ${plural(update.rows.length, 'page')}: ${same} unchanged, ${changed.length} changed, ${added.length} new`
+    + `${update.removed.length ? `, and ${plural(update.removed.length, 'page')} of this flyer ${update.removed.length === 1 ? 'is' : 'are'} not in it` : ''}. Unchanged pages keep their hotspots.`
+    + (shared.flyerId ? ' Everyone with this flyer open sees the update; the new and changed pages are uploaded.' : '');
+  $('updateBulk').hidden = changed.length < 2;
+  const img = (src, alt) => el('img', { src, alt });
+  const rows = update.rows.filter((r) => r.old === null || !r.unchanged).map((r) => {
+    if (r.old === null) {
+      return el('li', {}, el('div', { className: 'thumbs' }, img(r.after, `New ${pageLabel(r.j)}`)),
+        el('div', { className: 'what' }, el('b', { textContent: `Page ${r.j + 1} is new` }), el('span', { className: 'sub', textContent: 'It starts with no hotspots; generate it after updating.' })));
+    }
+    const count = state.pages[r.old].hotspots.length;
+    const choice = el('fieldset', {}, el('legend', { className: 'sr', textContent: `Page ${r.j + 1}’s hotspots` }),
+      ...[['keep', count ? `Keep its ${plural(count, 'hotspot')} (marked to check)` : 'Keep it (it has no hotspots)'], ['redo', 'Start the page over']].map(([value, text]) => {
+        const radio = el('input', { type: 'radio', name: `upd${r.j}`, value, checked: update.choices.get(r.j) === value });
+        radio.addEventListener('change', () => { update.choices.set(r.j, value); renderUpdate(); });
+        return el('label', {}, radio, text);
+      }));
+    const moved = r.old !== r.j ? ` (was page ${r.old + 1})` : '';
+    return el('li', {}, el('div', { className: 'thumbs' }, img(r.before, `Page ${r.old + 1} now`), '→', img(r.after, `Page ${r.j + 1} in the revised PDF`)),
+      el('div', { className: 'what' }, el('b', { textContent: `Page ${r.j + 1} changed${moved}` }), choice));
+  });
+  const removed = update.removed.map((r) => {
+    const count = state.pages[r.old].hotspots.length;
+    return el('li', {}, el('div', { className: 'thumbs' }, img(r.before, `Page ${r.old + 1}`)),
+      el('div', { className: 'what' }, el('b', { textContent: `Page ${r.old + 1} is not in the revised PDF` }), el('span', { className: 'sub', textContent: `It${count ? ` and its ${plural(count, 'hotspot')}` : ''} will be removed.` })));
+  });
+  $('updateList').replaceChildren(...rows, ...removed);
+  if (!rows.length && !removed.length) $('updateList').append(el('li', { className: 'sub', textContent: 'Every page is unchanged, so there is nothing to update.' }));
+  const open = changed.filter((r) => !update.choices.has(r.j)).length;
+  $('updateApply').disabled = open > 0 || (!rows.length && !removed.length);
+  $('updateNote').textContent = open ? `Choose what happens to the hotspots on ${plural(open, 'changed page')} to update the flyer.` : '';
+}
+function chooseAll(value) {
+  update.rows.filter((r) => r.old !== null && !r.unchanged).forEach((r) => update.choices.set(r.j, value));
+  renderUpdate();
+}
+$('updateKeepAll').addEventListener('click', () => chooseAll('keep'));
+$('updateRedoAll').addEventListener('click', () => chooseAll('redo'));
+$('updateClose').addEventListener('click', () => $('updateDlg').close());
+
+/**
+ * The flyer's new pages, in order: `same` pages are an old page as it was, `changed` ones an old page's
+ * new picture (with its hotspots kept or not), `new` ones a page of the revised PDF with nothing yet.
+ * Pages whose picture is new take the next free name, so no published image name is reused.
+ */
+function changePlan(rows) {
+  const old = state.pages;
+  const used = new Set(old.map((p, i) => { const n = pageNumber(p, i); return `${n.nameNumber}-${n.nameVersion}`; }));
+  const freeName = (nameNumber) => { let nameVersion = 1; while (used.has(`${nameNumber}-${nameVersion}`)) nameVersion++; used.add(`${nameNumber}-${nameVersion}`); return { nameNumber, nameVersion }; };
+  const campaign = readDetails().campaign;
+  return rows.map((r, j) => {
+    if (r.old === null) return { kind: 'new', old: null, keep: false, name: freeName(j + 1), replaces: '' };
+    const name = r.unchanged ? pageNumber(old[r.old], r.old) : freeName(j + 1);
+    return { kind: r.unchanged ? 'same' : 'changed', old: r.old, keep: r.unchanged || update.choices.get(j) === 'keep', name, replaces: r.unchanged ? '' : imageName(campaign, old[r.old], r.old) };
+  });
+}
+
+function applyPlanLocally(plan, pdf, file) {
+  const old = state.pages;
+  const pages = plan.map((r, j) => {
+    const from = r.old === null ? null : old[r.old];
+    const where = pdf ? { pdfPage: j } : { pdfPage: from.pdfPage ?? r.old };
+    if (r.kind === 'same') return Object.assign(from, r.name, where, { fresh: pdf ? false : from.fresh, replaces: pdf ? '' : from.replaces, items: pdf ? null : from.items, regions: pdf ? null : from.regions });
+    return { hotspots: r.keep ? keepToCheck(from.hotspots) : [], status: r.keep ? from.status : 'empty', error: '', items: null, regions: null, url: '', ...r.name, ...where, fresh: true, replaces: r.replaces };
+  });
+  const kept = new Set(pages);
+  old.forEach((p) => { if (!kept.has(p) && p.url?.startsWith('blob:')) URL.revokeObjectURL(p.url); });
+  Object.assign(state, { pages, current: clamp(state.current, 0, pages.length - 1), selected: -1, multi: new Set() });
+  if (pdf) Object.assign(state, { pdf, file });
+  $('pdfName').textContent = `${state.file?.name || ''} · ${plural(pages.length, 'page')}`;
+  persist();
+}
+
+/**
+ * Writes the new pages to the shared flyer: uploads the new pictures, rewrites the page documents in
+ * their new order and moves or deletes the hotspots. Others see the flyer as view-only meanwhile.
+ */
+async function applyPlanShared(plan, pdf, file) {
+  const old = state.pages;
+  await shared.db.doc(flyerPath()).update({ updatingBy: shared.me, updatingSince: Date.now() });
+  try {
+    for (const [j, r] of plan.entries()) {
+      exportProgress(`Updating page ${j + 1} of ${plan.length}…`, j, plan.length);
+      const from = r.old === null ? null : old[r.old];
+      let image = from?.imageId, items = from?.items || [], regions = from?.regions || [];
+      if (r.kind !== 'same') {
+        image = (await shared.assets.upload(await toJpeg(await renderPdfPage(pdf, j, EXPORT_WIDTH), 0.86), { type: 'image/jpeg' })).id;
+        items = await readTextItems(pdf, j);
+        regions = await readImageRegions(pdf, j).catch(() => []);
+      }
+      const status = r.kind === 'new' || !r.keep ? 'empty' : from.status === 'working' ? 'empty' : from.status;
+      const fresh = r.kind === 'same' ? (pdf ? false : !!from.fresh) : true;
+      await limited(() => shared.db.doc(flyerPath('pages', pageId(j))).set({ n: j, image, items, regions, status, error: '', ...r.name, fresh, replaces: r.kind === 'same' ? (pdf ? '' : from.replaces || '') : r.replaces }));
+    }
+    exportProgress('Moving the hotspots…', 0, 1);
+    const kept = new Set();
+    const writes = [];
+    plan.forEach((r, j) => {
+      if (r.old === null || !r.keep) return;
+      const hotspots = r.kind === 'same' ? old[r.old].hotspots : keepToCheck(old[r.old].hotspots);
+      hotspots.forEach((h, order) => {
+        if (!h.id) h.id = newId('h');
+        kept.add(h.id);
+        if (r.kind === 'same' && r.old === j) return; // still on its page
+        const { id, ...fields } = h;
+        writes.push(() => shared.db.doc(flyerPath('hotspots', id)).set({ ...fields, page: j, order }));
+      });
+    });
+    old.flatMap((p) => p.hotspots).filter((h) => h.id && !kept.has(h.id)).forEach((h) => writes.push(() => shared.db.doc(flyerPath('hotspots', h.id)).delete()));
+    for (let n = plan.length; n < old.length; n++) writes.push(() => shared.db.doc(flyerPath('pages', pageId(n))).delete());
+    let done = 0;
+    await Promise.all(writes.map((w) => limited(w).then(() => exportProgress(`Moving the hotspots… ${++done} of ${writes.length}`, done, writes.length))));
+    await shared.db.doc(flyerPath()).update({ pageCount: plan.length, ...(file ? { pdfName: file.name } : {}), updatingBy: '', updatingSince: 0 });
+  } catch (e) {
+    await shared.db.doc(flyerPath()).update({ updatingBy: '', updatingSince: 0 }).catch(() => {});
+    throw e;
+  }
+  await openSharedFlyer(shared.flyerId);
+}
+
+async function applyPlan(title, plan, pdf, file) {
+  $('savingTitle').textContent = title;
+  state.busy = true; updateButtons();
+  try {
+    if (shared.flyerId) await applyPlanShared(plan, pdf, file);
+    else applyPlanLocally(plan, pdf, file);
+    return true;
+  } catch (e) {
+    setStatus(`The flyer could not be updated${e?.code === 'not_granted' ? ': uploading pages needs Editor access to Flyer Studio' : ''}. Open the shared flyer again to see where it stopped.`, true);
+    return false;
+  } finally {
+    exportProgress(null);
+    state.busy = false; renderAll();
+  }
+}
+
+$('updateApply').addEventListener('click', async () => {
+  const { pdf, file, rows } = update;
+  $('updateDlg').close();
+  const plan = changePlan(rows);
+  // Read first: a shared flyer reopens after the update, its details arriving a moment later.
+  const campaign = readDetails().campaign;
+  if (!(await applyPlan(shared.flyerId ? 'Updating the shared flyer' : 'Updating the flyer', plan, pdf, file))) return;
+  const count = (kind) => plan.filter((r) => r.kind === kind).length;
+  const redo = plan.flatMap((r, j) => (r.kind === 'new' || (r.kind === 'changed' && !r.keep) ? [j + 1] : []));
+  const images = plan.filter((r) => r.kind !== 'same').map((r) => imageName(campaign, r.name, 0));
+  $('range').value = redo.join(', ');
+  setStatus(`Updated from ${file.name}: ${count('changed')} changed, ${count('new')} new, ${update.removed.length} removed.`
+    + (redo.length ? ` Generate ${redo.length === 1 ? `page ${redo[0]}` : `pages ${redo.join(', ')}`} next (filled in under Pages to generate).` : '')
+    + (images.length && campaign ? ` Then save the new page images (${images.join(', ')}) with “Save new page images” and upload only those.` : ''));
+  if (!shared.flyerId) await showPage(redo.length ? redo[0] - 1 : state.current);
+});
+
+let deletingPage = -1;
+$('deletePageBtn').addEventListener('click', async () => {
+  if (state.example || state.busy || readOnly() || state.pages.length < 2) return;
+  const i = state.current;
+  if (deletingPage !== i) { deletingPage = i; $('deletePageBtn').textContent = `Click again to delete ${pageLabel(i)}`; return; }
+  resetDeletePage();
+  const removed = state.pages[i];
+  // Every other page keeps the image name it has now.
+  const plan = state.pages.flatMap((p, k) => (k === i ? [] : [{ kind: 'same', old: k, keep: true, name: pageNumber(p, k), replaces: '' }]));
+  if (!(await applyPlan('Deleting the page', plan, null, null))) return;
+  setStatus(`Deleted page ${i + 1}${removed.hotspots.length ? ` and its ${plural(removed.hotspots.length, 'hotspot')}` : ''}.`);
+  if (!shared.flyerId) await showPage(Math.min(i, state.pages.length - 1));
+});
+function resetDeletePage() { deletingPage = -1; $('deletePageBtn').textContent = 'Delete page'; }
+
+// ---------- hotspots from Amplience ----------
+// The importer extension's "Export for Flyer Studio" saves a Digital Flyer item's pages in this
+// Studio's export format, with the edits made in Amplience. Loading it replaces the hotspots on the
+// pages it names, matched by image name (or by place, when no name matches and the page counts agree).
+function fromAmplience(raw) {
+  const text = (v) => String(v || '').trim();
+  const box = raw?.box || {};
+  const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
+  const label = text(raw?.label);
+  return {
+    id: newId('h'), label, priceText: text(raw?.priceText), description: text(raw?.description), ...(text(raw?.buttonText) ? { buttonText: text(raw.buttonText) } : {}), brand: '',
+    box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
+    textItemIds: [], offerIds: [], skus: (Array.isArray(raw?.skus) ? raw.skus : []).map((s) => normalizeSku(text(s))).filter(Boolean),
+    beans: (Array.isArray(raw?.objectIds) ? raw.objectIds : []).map(text).filter(Boolean), objectIds: [],
+    fallback: toLink(raw?.fallback, label), inStoreOnly: raw?.inStoreOnly === true, confidence: raw?.confidence === 'low' ? 'low' : 'high', note: '',
+    // Edited in Amplience: kept when pages are generated again, and not overwritten from the item list.
+    locked: true, reviewed: true, beansEdited: true, skusEdited: true,
+  };
+}
+$('amplienceInput').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file || state.example || state.busy || readOnly()) return;
+  let pages;
+  try { pages = JSON.parse(await file.text())?.pages; } catch {}
+  if (!Array.isArray(pages) || !pages.length) { setStatus('That file has no flyer pages. Choose the file saved by “Export for Flyer Studio” in the Digital Flyer item.', true); return; }
+  const campaign = readDetails().campaign;
+  const byName = new Map(state.pages.map((p, i) => [imageName(campaign, p, i), i]));
+  let targets = pages.map((page) => byName.get(String(page?.imageName || '')) ?? -1);
+  if (!targets.some((t) => t >= 0)) {
+    if (pages.length !== state.pages.length) { setStatus(`None of the file’s pages (${pages[0]?.imageName || 'unnamed'}, …) match this flyer’s page images, and it has ${plural(pages.length, 'page')} to this flyer’s ${state.pages.length}. Check the campaign code.`, true); return; }
+    targets = pages.map((_, i) => i);
+  }
+  const before = state.pages.map((p) => ({ hotspots: p.hotspots.slice(), status: p.status }));
+  let boxes = 0, loaded = 0;
+  pages.forEach((page, k) => {
+    const p = state.pages[targets[k]];
+    if (!p) return;
+    const hotspots = (Array.isArray(page?.hotspots) ? page.hotspots : []).map(fromAmplience);
+    p.hotspots.splice(0, p.hotspots.length, ...hotspots);
+    if (p.status !== 'done' && hotspots.length) p.status = 'done';
+    boxes += hotspots.length; loaded++;
+  });
+  state.selected = -1; state.multi = new Set();
+  persist(); renderAll();
+  const skipped = pages.length - loaded;
+  setStatus(`Loaded ${plural(boxes, 'hotspot')} from Amplience onto ${plural(loaded, 'page')}${skipped ? `; ${plural(skipped, 'page')} of the file ${skipped === 1 ? 'matches' : 'match'} no page here` : ''}. `);
+  const undo = el('button', { className: 'linkbtn', type: 'button', textContent: 'Undo' });
+  undo.addEventListener('click', () => {
+    before.forEach((b, i) => { const p = state.pages[i]; if (!p) return; p.hotspots.splice(0, p.hotspots.length, ...b.hotspots); p.status = b.status; });
+    persist(); renderAll();
+    setStatus('Put back the hotspots from before the Amplience file.');
+  });
+  $('status').append(undo);
+});
 
 // ---------- guide ----------
 const guide = $('guide');
@@ -2934,7 +3340,14 @@ const SYNC_ERRORS = {
 const newId = (prefix) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const pageId = (n) => `p${String(n).padStart(3, '0')}`;
 const flyerPath = (...rest) => ['flyers', shared.flyerId, ...rest].join('/');
-const readOnly = () => !!shared.flyerId && shared.readOnly;
+const readOnly = () => !!shared.flyerId && (shared.readOnly || !!updatingBy());
+// Who is updating the open flyer from a revised PDF, when it is someone else: the flyer is view-only
+// meanwhile. A claim older than UPDATE_MS is from a tab that closed part way.
+const UPDATE_MS = 10 * 60000;
+const updatingBy = () => {
+  const f = shared.flyer;
+  return f?.updatingBy && f.updatingBy !== shared.me && Number(f.updatingSince) + UPDATE_MS > Date.now() ? f.updatingBy : '';
+};
 
 async function imageCanvas(url, width) {
   const img = new Image();
@@ -2986,7 +3399,7 @@ function updateSyncState() {
 
 /** Writes what changed on this flyer since the store last had it: details, page status, hotspots. */
 function syncShared() {
-  if (!shared.flyerId || shared.readOnly) return;
+  if (!shared.flyerId || readOnly()) return;
   // Details are written only once the flyer's own have arrived, so empty fields never overwrite them.
   if (shared.flyer) {
     const d = readDetails();
@@ -3084,7 +3497,10 @@ function refresh() {
 function applyFlyer(snap) {
   if (!snap.exists) { closeShared(); setStatus('That shared flyer was deleted.', true); renderAll(); return; }
   const data = snap.data();
+  const wasUpdating = updatingBy();
   shared.flyer = data;
+  if (updatingBy() && !wasUpdating) setStatus(`${shared.names.get(updatingBy()) || 'Someone'} is updating this flyer from a revised PDF. It is view-only until they finish.`);
+  if (wasUpdating && !updatingBy()) setStatus('The flyer was updated from a revised PDF.');
   const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '', firstPage: data.firstPage || '', spreadsFrom: data.spreadsFrom || '' };
   shared.synced.set(`${flyerPath()}#details`, JSON.stringify(details));
   if (!DETAIL_FIELDS.includes(document.activeElement?.id)) writeDetails(details);
@@ -3092,18 +3508,23 @@ function applyFlyer(snap) {
   if (state.offers.length && data.itemList?.name && sheet.name !== data.itemList.name) {
     shared.applying = true; sheet.name = data.itemList.name; showItemList(); shared.applying = false;
   }
-  updateExport();
+  if (!!wasUpdating !== !!updatingBy()) renderAll(); else updateExport();
 }
 
 function applyPages(snap) {
-  const count = Math.max(shared.flyer?.pageCount || 0, ...snap.docs.map((d) => Number(d.data().n) + 1));
+  // Pages deleted from the flyer lose their documents, so the documents say how many pages there are.
+  const count = snap.docs.length ? Math.max(...snap.docs.map((d) => Number(d.data().n) + 1)) : shared.flyer?.pageCount || 0;
   while (state.pages.length < count) state.pages.push({ hotspots: [], status: 'empty', error: '', items: null, regions: null, url: '' });
+  if (state.pages.length > count) state.pages.length = count;
+  state.current = clamp(state.current, 0, Math.max(0, count - 1));
   for (const d of snap.docs) {
     const data = d.data(), n = Number(data.n), p = state.pages[n];
     if (!p) continue;
-    if (data.image && !p.url) p.url = `/_blob/${data.image}`;
+    // A page's picture changes when the flyer is updated from a revised PDF.
+    if (data.image && data.image !== p.imageId) { p.imageId = data.image; p.url = `/_blob/${data.image}`; }
     if (Array.isArray(data.items)) p.items = data.items;
     if (Array.isArray(data.regions)) p.regions = data.regions;
+    Object.assign(p, { nameNumber: data.nameNumber, nameVersion: data.nameVersion, fresh: !!data.fresh, replaces: data.replaces || '' });
     p.generatingBy = data.generatingBy || '';
     p.generatingSince = Number(data.generatingSince) || 0;
     const key = `${flyerPath('pages', pageId(n))}#status`;
@@ -3226,7 +3647,8 @@ async function shareFlyer() {
       const image = await shared.assets.upload(await toJpeg(await pageCanvas(i, EXPORT_WIDTH), 0.86), { type: 'image/jpeg' });
       const items = await textItems(i);
       const regions = await imageRegions(i).catch(() => []);
-      await shared.db.doc(`${base}/pages/${pageId(i)}`).set({ n: i, image: image.id, items, regions, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '' });
+      const { pdfPage, ...names } = pageFields(p);
+      await shared.db.doc(`${base}/pages/${pageId(i)}`).set({ n: i, image: image.id, items, regions, status: p.status === 'working' ? 'empty' : p.status, error: p.error || '', ...names });
     }
     exportProgress('Copying the hotspots…', 0, 1);
     const writes = state.pages.flatMap((p, page) => p.hotspots.map((h, order) => {

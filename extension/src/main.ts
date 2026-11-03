@@ -6,7 +6,7 @@ import { buildPages, findImage, parseStudioExport, type FlyerPage, type ImageLin
 import { openEditor, refreshEditor } from './editor';
 import { countByStatus, matchProducts, renderProducts, withChosenSkus, type Matches } from './products';
 
-type Sdk = Pick<ContentFieldExtension<FlyerPage[]>, 'field' | 'form' | 'frame' | 'params'>;
+type Sdk = Pick<ContentFieldExtension<FlyerPage[]>, 'field' | 'form' | 'frame' | 'params' | 'mediaLink'>;
 type ImageStatus = 'checking' | 'published' | 'missing';
 
 // Scheels' Amplience media account. Installation parameters `endpoint` / `defaultHost` override it.
@@ -37,6 +37,8 @@ let sdk: Sdk;
 let media = DEFAULT_MEDIA;
 // The Link & Value Generator's address, from the installation parameters (this code is public).
 let linkGeneratorUrl = '';
+// Amplience's image picker, which only exists inside Amplience.
+let pickImage: (() => Promise<ImageLink | null>) | undefined;
 
 function setMessage(text: string, kind: 'info' | 'error' | 'ok' = 'info') {
   const el = $('message');
@@ -58,7 +60,16 @@ async function showCurrent() {
     readOnly: () => state.readOnly,
     resize: () => sdk.frame.setHeight(),
     linkGeneratorUrl: linkGeneratorUrl || undefined,
+    media,
+    pickImage,
+    details: readDetails,
   });
+}
+
+async function readDetails() {
+  const form = ((await sdk.form.getValue().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+  const text = (key: string) => (typeof form[key] === 'string' ? (form[key] as string) : '');
+  return { title: text('title'), campaign: text('campaign'), startDate: text('startDate'), endDate: text('endDate') };
 }
 
 async function writePages(pages: FlyerPage[]): Promise<string | null> {
@@ -230,6 +241,21 @@ async function chooseFile(file: File) {
 
 async function apply() {
   if (!state.flyer) return;
+  // Amplience requires a product name on every hotspot and would reject the whole import.
+  const unnamed = state.flyer.pages.flatMap((page, i) =>
+    page.hotspots.flatMap((h, j) => (h.label.trim() ? [] : [`page ${i + 1}, box ${j + 1}`])),
+  );
+  if (unnamed.length) {
+    const one = unnamed.length === 1;
+    const shown = unnamed.slice(0, 3).join('; ');
+    const list = unnamed.length > 3 ? `${shown} and ${unnamed.length - 3} more` : shown;
+    setMessage(
+      `Every hotspot needs a product name, and ${list} ${one ? 'has' : 'have'} none. ` +
+        `Name ${one ? 'it' : 'them'} in Flyer Studio, save the flyer data again and choose the new file.`,
+      'error',
+    );
+    return;
+  }
   try {
     const flyer = state.matches ? withChosenSkus(state.flyer, state.matches) : state.flyer;
     const errors = await sdk.field.setValue(buildPages(flyer, state.images));
@@ -268,6 +294,8 @@ async function start() {
     endpoint: installation.endpoint || DEFAULT_MEDIA.endpoint,
     defaultHost: installation.defaultHost || DEFAULT_MEDIA.defaultHost,
   };
+  // The picker rejects when the author closes it without choosing.
+  if (framed) pickImage = () => sdk.mediaLink.getImage().catch(() => null);
   sdk.frame.startAutoResizer();
   setReadOnly(sdk.form.readOnly);
   sdk.form.onReadOnlyChange(setReadOnly);

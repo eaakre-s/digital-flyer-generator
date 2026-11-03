@@ -1,5 +1,15 @@
 import { fetchProducts, searchBatch, type Candidate } from './ace';
-import type { FlyerPage, Hotspot } from './flyer';
+import {
+  findImage,
+  parseStudioExport,
+  toStudioExport,
+  type FlyerDetails,
+  type FlyerPage,
+  type Hotspot,
+  type ImageLink,
+  type MediaSettings,
+  type StudioFlyer,
+} from './flyer';
 import { copyText } from './copy';
 import {
   defaultButtonText,
@@ -30,6 +40,12 @@ interface EditorDeps {
   resize: () => void;
   /** The Link & Value Generator, from the extension's installation parameters (kept out of this public code). */
   linkGeneratorUrl?: string;
+  /** The media account page images are published to, for finding one by name. */
+  media: MediaSettings;
+  /** Amplience's image picker (absent outside Amplience); null when the author cancels. */
+  pickImage?: () => Promise<ImageLink | null>;
+  /** The item's title, campaign and sale dates, for the export back to Flyer Studio. */
+  details: () => Promise<FlyerDetails>;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -724,6 +740,7 @@ function renderInspector() {
         sort,
       );
     }
+    panel.append(pagePanel());
     return;
   }
   const ro = deps.readOnly();
@@ -782,6 +799,376 @@ function renderInspector() {
     changed();
   });
   panel.append(el('div', { className: 'group' }, del));
+}
+
+// ---------- page actions ----------
+// A page is added, replaced or deleted on the saved flyer. A new page comes from an image in Content
+// Hub (with no hotspots) or from a page of a Flyer Studio export (its image, found by name, and its
+// hotspots).
+
+type PageAction = 'add' | 'replace';
+type HotspotChoice = 'keep' | 'export' | 'none';
+
+interface PageChoice {
+  image: ImageLink;
+  /** The export page's hotspots; null for an image from Content Hub. */
+  hotspots: Hotspot[] | null;
+}
+
+const pageForm = {
+  action: null as PageAction | null,
+  before: false,
+  name: '',
+  choice: null as PageChoice | null,
+  // Asked each time a page with hotspots is replaced: there is no default.
+  hotspots: null as HotspotChoice | null,
+  note: '',
+  error: false,
+  confirmDelete: false,
+  // Kept between forms, so several pages can be taken from one export.
+  studio: null as { file: string; flyer: StudioFlyer } | null,
+};
+
+function resetPageForm(action: PageAction | null = null) {
+  Object.assign(pageForm, { action, before: false, name: '', choice: null, hotspots: null, note: '', error: false });
+  pageForm.confirmDelete = false;
+}
+
+const thumbUrl = (image: { defaultHost: string; endpoint: string; name: string }) =>
+  `https://${image.defaultHost}/i/${image.endpoint}/${encodeURIComponent(image.name)}?w=160`;
+
+function thumb(image: { defaultHost: string; endpoint: string; name: string }) {
+  const img = el('img', { src: thumbUrl(image), alt: '', loading: 'lazy' }) as HTMLImageElement;
+  img.addEventListener('error', () => img.replaceWith(el('span', { className: 'nothumb', textContent: 'No image' })));
+  return img;
+}
+
+function pageNote(note: string, error = false) {
+  pageForm.note = note;
+  pageForm.error = error;
+  renderInspector();
+}
+
+function choosePage(choice: PageChoice) {
+  pageForm.choice = choice;
+  pageForm.hotspots = null;
+  pageNote('');
+}
+
+async function findImageByName() {
+  const name = pageForm.name.trim();
+  if (!name) return;
+  pageNote(`Looking for ${name}…`);
+  const image = await findImage(name, deps.media);
+  if (!pageForm.action) return;
+  if (image) choosePage({ image, hotspots: null });
+  else pageNote(`No published image is named ${name}. Check the name, or publish it in Content Hub first.`, true);
+}
+
+async function pickImageInContentHub() {
+  const image = await deps.pickImage?.();
+  if (image && pageForm.action) choosePage({ image, hotspots: null });
+}
+
+async function readStudioFile(file: File) {
+  try {
+    pageForm.studio = { file: file.name, flyer: parseStudioExport(await file.text()) };
+    pageNote('');
+  } catch (error) {
+    pageNote((error as Error).message, true);
+  }
+}
+
+async function chooseStudioPage(index: number) {
+  const page = pageForm.studio?.flyer.pages[index];
+  if (!page) return;
+  pageNote(`Looking for ${page.imageName}…`);
+  const image = await findImage(page.imageName, deps.media);
+  if (!pageForm.action) return;
+  if (image) choosePage({ image, hotspots: structuredClone(page.hotspots) });
+  else {
+    const why = `Page ${index + 1}’s image, ${page.imageName}, isn’t published yet. Publish it in Content Hub first.`;
+    pageNote(why, true);
+  }
+}
+
+function applyPageForm() {
+  const choice = pageForm.choice;
+  if (!choice) return;
+  if (pageForm.action === 'add') {
+    const at = pageForm.before ? state.page : state.page + 1;
+    state.pages.splice(at, 0, { image: choice.image, hotspots: choice.hotspots ?? [] });
+    changed();
+    goTo(at);
+    return;
+  }
+  const page = state.pages[state.page];
+  const keep = page.hotspots.length ? pageForm.hotspots : 'export';
+  page.image = choice.image;
+  if (keep === 'export') page.hotspots = choice.hotspots ?? page.hotspots;
+  if (keep === 'none') page.hotspots = [];
+  changed();
+  resetPageForm();
+  select(-1);
+}
+
+function deletePage() {
+  if (!pageForm.confirmDelete) {
+    pageForm.confirmDelete = true;
+    renderInspector();
+    return;
+  }
+  state.pages.splice(state.page, 1);
+  changed();
+  goTo(state.page);
+}
+
+/** The page's actions, under its list of hotspots: add a page next to it, replace it, or delete it. */
+function pagePanel() {
+  const ro = deps.readOnly();
+  const n = state.page + 1;
+  const group = el('div', { className: 'group' }, el('h4', { textContent: 'Page' }));
+  const button = (textContent: string, onClick: () => void, props: Record<string, unknown> = {}) => {
+    const node = el('button', { type: 'button', textContent, disabled: ro, ...props });
+    node.addEventListener('click', onClick);
+    return node;
+  };
+  const open = (action: PageAction) => () => {
+    resetPageForm(action);
+    renderInspector();
+  };
+
+  if (!pageForm.action) {
+    const only = state.pages.length < 2;
+    group.append(
+      el(
+        'div',
+        { className: 'row' },
+        button('Add page', open('add')),
+        button('Replace page', open('replace')),
+        button(pageForm.confirmDelete ? 'Click again to delete' : 'Delete page', deletePage, {
+          className: 'danger',
+          disabled: ro || only,
+        }),
+      ),
+    );
+    if (only) group.append(el('p', { className: 'muted small', textContent: 'A flyer keeps at least one page.' }));
+    return group;
+  }
+
+  const replacing = pageForm.action === 'replace';
+  group.append(
+    el('p', {
+      className: 'muted',
+      textContent: replacing
+        ? `The new version of page ${n}: an image from Content Hub, or a page of a Flyer Studio export.`
+        : 'The new page: an image from Content Hub, or a page of a Flyer Studio export.',
+    }),
+  );
+  const radio = (name: string, label: string, checked: boolean, onPick: () => void) => {
+    const input = el('input', { type: 'radio', name, checked, disabled: ro }) as HTMLInputElement;
+    input.addEventListener('change', () => {
+      onPick();
+      renderInspector();
+    });
+    return el('label', { className: 'check' }, input, el('span', { textContent: label }));
+  };
+  if (!replacing) {
+    group.append(
+      el(
+        'fieldset',
+        { className: 'choices' },
+        el('legend', { textContent: 'Where' }),
+        radio('edPageWhere', `After page ${n}`, !pageForm.before, () => (pageForm.before = false)),
+        radio('edPageWhere', `Before page ${n}`, pageForm.before, () => (pageForm.before = true)),
+      ),
+    );
+  }
+
+  if (deps.pickImage) {
+    group.append(el('div', { className: 'row' }, button('Choose an image in Content Hub', pickImageInContentHub)));
+  }
+  const name = el('input', {
+    type: 'text',
+    id: 'edPageImage',
+    value: pageForm.name,
+    placeholder: 'e.g. flyer-biggame26-p12',
+    disabled: ro,
+  }) as HTMLInputElement;
+  name.addEventListener('input', () => (pageForm.name = name.value));
+  name.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    findImageByName();
+  });
+  group.append(
+    el(
+      'div',
+      { className: 'namefind' },
+      field(deps.pickImage ? 'Or its image name' : 'Image name', name),
+      button('Find', findImageByName),
+    ),
+  );
+  const file = el('input', {
+    type: 'file',
+    accept: '.json,application/json',
+    className: 'sr',
+    disabled: ro,
+  }) as HTMLInputElement;
+  file.addEventListener('change', () => {
+    const chosen = file.files?.[0];
+    if (chosen) readStudioFile(chosen);
+  });
+  group.append(
+    el(
+      'div',
+      { className: 'row' },
+      el(
+        'label',
+        { className: 'file' },
+        pageForm.studio ? 'Another Flyer Studio export (.json)' : 'Flyer Studio export (.json)',
+        file,
+      ),
+    ),
+  );
+
+  const studio = pageForm.studio;
+  if (studio) {
+    group.append(
+      el('p', { className: 'muted small', textContent: `Pages of ${studio.file}:` }),
+      el(
+        'ul',
+        { className: 'exportpages' },
+        ...studio.flyer.pages.map((page, i) => {
+          const pick = el(
+            'button',
+            { type: 'button', disabled: ro },
+            thumb({ ...deps.media, name: page.imageName }),
+            el('span', { className: 'name', textContent: `Page ${i + 1}` }),
+            el('span', {
+              className: 'muted',
+              textContent: `${page.imageName} · ${count(page.hotspots.length, 'hotspot')}`,
+            }),
+          );
+          pick.setAttribute('aria-pressed', String(pageForm.choice?.image.name === page.imageName));
+          pick.addEventListener('click', () => chooseStudioPage(i));
+          return el('li', {}, pick);
+        }),
+      ),
+    );
+  }
+
+  const choice = pageForm.choice;
+  const current = state.pages[state.page];
+  let ready = !!choice;
+  if (choice) {
+    group.append(
+      el(
+        'div',
+        { className: 'chosen' },
+        thumb(choice.image),
+        el(
+          'span',
+          {},
+          el('strong', { textContent: choice.image.name }),
+          choice.hotspots ? ` · ${count(choice.hotspots.length, 'hotspot')} from the export` : ' · no hotspots',
+        ),
+      ),
+    );
+    if (replacing && current.hotspots.length) {
+      const options: [HotspotChoice, string][] = [
+        ['keep', `Keep this page’s ${count(current.hotspots.length, 'hotspot')}`],
+      ];
+      if (choice.hotspots) {
+        options.push(['export', `Use the export page’s ${count(choice.hotspots.length, 'hotspot')}`]);
+      }
+      options.push(['none', 'Remove them']);
+      group.append(
+        el(
+          'fieldset',
+          { className: 'choices' },
+          el('legend', { textContent: 'Its hotspots' }),
+          ...options.map(([value, label]) =>
+            radio('edPageHotspots', label, pageForm.hotspots === value, () => (pageForm.hotspots = value)),
+          ),
+        ),
+      );
+      ready = !!pageForm.hotspots;
+    }
+    // What happens to the hotspots: asked when the page has some, otherwise the export's come in.
+    const hotspotChoice = current.hotspots.length ? pageForm.hotspots : 'export';
+    const changesHotspots =
+      hotspotChoice === 'none' ? current.hotspots.length > 0 : hotspotChoice === 'export' && !!choice.hotspots;
+    // The site loads page images by name, so the same name is the same picture.
+    const sameImage = choice.image.name === current.image?.name && choice.image.endpoint === current.image?.endpoint;
+    if (replacing && hotspotChoice && sameImage && !changesHotspots) {
+      ready = false;
+      group.append(
+        el('p', {
+          className: 'warn small',
+          textContent:
+            `This is the image page ${n} already has, so nothing would change. If Creative uploaded the new ` +
+            'version under the same name, the page shows it once it is published.',
+        }),
+      );
+    }
+  }
+  if (pageForm.note) {
+    const note = el('p', { className: pageForm.error ? 'warn small' : 'muted small', textContent: pageForm.note });
+    note.setAttribute('role', 'status');
+    group.append(note);
+  }
+  group.append(
+    el(
+      'div',
+      { className: 'row' },
+      button(replacing ? `Replace page ${n}` : 'Add page', applyPageForm, {
+        className: 'primary',
+        disabled: ro || !ready,
+      }),
+      button('Cancel', () => {
+        resetPageForm();
+        renderInspector();
+      }, { className: 'link' }),
+    ),
+  );
+  return group;
+}
+
+// ---------- export for Flyer Studio ----------
+
+/**
+ * Saves the flyer as edited here in Flyer Studio's export format. Amplience's sandbox can stop the
+ * download, so the data can also be copied, or selected for copying by hand.
+ */
+async function exportForStudio() {
+  const details = await deps.details();
+  const data = JSON.stringify(toStudioExport(details, state.pages), null, 2);
+  const filename = `flyer-${details.campaign || 'export'}-amplience.json`;
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  el('a', { href: url, download: filename }).click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  const note = $('edExportNote');
+  const copy = el('button', { type: 'button', className: 'link', textContent: 'Copy the data instead' });
+  copy.addEventListener('click', async () => {
+    if (await copyText(data)) {
+      copy.textContent = 'Copied';
+      return;
+    }
+    const manual = el('textarea', {
+      value: data,
+      readOnly: true,
+      rows: 4,
+      className: 'copyfield',
+    }) as HTMLTextAreaElement;
+    manual.setAttribute('aria-label', 'Flyer data to copy');
+    copy.replaceWith(el('span', { textContent: 'Copying is blocked too: press ⌘C / Ctrl+C.' }), manual);
+    manual.focus();
+    manual.select();
+  });
+  note.replaceChildren(el('span', { textContent: `Saved ${filename}. Nothing downloaded? ` }), copy);
+  note.hidden = false;
 }
 
 // ---------- hotspot order ----------
@@ -865,6 +1252,7 @@ function select(index: number) {
   if (index !== state.selected) {
     state.searchResults = [];
     state.searchQuery = '';
+    resetPageForm();
   }
   state.selected = index;
   state.confirmDelete = false;
@@ -874,6 +1262,7 @@ function select(index: number) {
 function goTo(page: number) {
   // Each page's edits are written when moving on, so a long session never builds up much unapplied work.
   applyChanges();
+  resetPageForm();
   state.page = clamp(page, 0, state.pages.length - 1);
   state.drawing = false;
   select(-1);
@@ -1129,6 +1518,7 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
       render();
     });
     $('edCheck').addEventListener('click', runCheck);
+    $('edExport').addEventListener('click', exportForStudio);
     $('edCheckClose').addEventListener('click', resetCheck);
     // Leaving the extension (to click Save, another field, or another tab) writes the edits. The
     // pause lets a field being left record its last edit first.
@@ -1146,6 +1536,8 @@ export function openEditor(pages: FlyerPage[], editorDeps: EditorDeps) {
   unapplied = false;
   setStatus('');
   resetCheck();
+  resetPageForm();
+  $('edExportNote').hidden = true;
   ($('edCheck') as HTMLButtonElement).textContent = 'Check flyer';
   render();
 }
