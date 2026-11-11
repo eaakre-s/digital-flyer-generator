@@ -130,6 +130,11 @@ ul.flyers li[aria-current="true"]{border-color:var(--red)}
 ul.flyers .name{font-weight:700}
 ul.flyers .sub{grid-column:1;font-size:13px;color:var(--ink-2)}
 ul.flyers .acts{grid-column:2;grid-row:1/span 2;display:flex;gap:6px}
+ul.history{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.history>li{border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px}
+ul.history .when{font-size:12px;color:var(--ink-2)}
+ul.history ul{margin:4px 0 0;padding-left:18px;font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+ul.history summary{cursor:pointer;font-size:13px;color:var(--ink-2);margin-top:4px}
 ul.updates{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 ul.updates li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px 14px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 ul.updates .thumbs{display:flex;align-items:center;gap:6px;color:var(--ink-2)}
@@ -204,6 +209,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="files">
       <button class="btn" id="guideBtn" type="button" aria-haspopup="dialog">How to publish a flyer</button>
       <button class="btn" id="flyersBtn" type="button" aria-haspopup="dialog" hidden>Shared flyers</button>
+      <button class="btn" id="historyBtn" type="button" aria-haspopup="dialog" title="Who changed what in this shared flyer" hidden>History</button>
       <span class="syncstate" id="syncState" role="status"></span>
       <label class="filebtn" for="pdfInput">Open flyer PDF <small id="pdfName">No file</small><input id="pdfInput" type="file" accept="application/pdf,.pdf"></label>
       <label class="filebtn" for="revisedInput" id="revisedBtn" title="Compare a revised PDF from Creative with this flyer, then add, replace and remove pages to match it" hidden>Update from revised PDF<input id="revisedInput" type="file" accept="application/pdf,.pdf"></label>
@@ -306,6 +312,22 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     <div class="actions"><button class="btn primary" id="shareBtn" type="button">Share the open flyer with your team</button></div>
     <p class="sheetnote" id="shareWhy" role="status"></p>
     <ul class="flyers" id="flyersList"></ul>
+    <h3 class="sub" id="deletedHead" hidden>Deleted flyers</h3>
+    <ul class="flyers" id="deletedList" hidden></ul>
+  </div>
+</dialog>
+
+<dialog class="guide colmap" id="historyDlg" aria-labelledby="historyTitle">
+  <div class="guidehead">
+    <h2 id="historyTitle">History</h2>
+    <button class="btn" id="historyClose" type="button">Close</button>
+  </div>
+  <div class="guidebody">
+    <p class="lead" id="historyLead"></p>
+    <p class="sheetnote" id="historyFilter" hidden><span id="historyFilterText"></span><button class="linkbtn" id="historyAll" type="button">Show every change</button></p>
+    <ul class="history" id="historyList"></ul>
+    <p class="sheetnote" id="historyStatus" role="status"></p>
+    <div class="actions"><button class="btn" id="historyMore" type="button" hidden>Show older changes</button></div>
   </div>
 </dialog>
 
@@ -454,6 +476,8 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
     </ol>
     <h3 class="sub">Working on a flyer together</h3>
     <p>Open the PDF, then <b>Shared flyers › Share the open flyer with your team</b>. Sharing uploads the pages, your boxes and the item list, and needs Editor access to Flyer Studio; teammates with Contributor access then open it from <b>Shared flyers</b>, without the PDF. Everyone sees the same boxes, and edits show up for the others as they are made (two people changing the same box: the last change wins). The page list shows who is on which page, and a page someone is generating is skipped by everyone else's Generate. The status beside the buttons says when everything is saved.</p>
+    <h3 class="sub">Who changed what</h3>
+    <p>A shared flyer keeps an edit log: <b>History</b> beside the buttons lists each change, newest first, with who made it and the fields before and after, and <b>History of this box</b> in a box's panel shows just that box. <b>Shared flyers</b> has a History for every flyer, including deleted ones, with who deleted them. The log is kept until two weeks after the sale ends. Work done before a flyer is shared isn't logged.</p>
     <h3 class="sub">Fixing a live flyer</h3>
     <p>Open the Digital Flyer item: the Pages field shows the saved flyer. Move or resize boxes, change a hotspot's products with <b>Find product</b>, or draw and delete boxes, then save the item. Its <b>Page</b> panel adds, replaces and deletes pages, from an image in Content Hub or a page of a Flyer Studio export.</p>
     <h3 class="sub">When Creative sends a revised PDF</h3>
@@ -778,7 +802,7 @@ const colLetter = (i) => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : '') + St
 
 /** Re-links hotspots to the item list now in state.offers and shows it in the header. Returns its SKU count. */
 function showItemList() {
-  if (relinkHotspots()) { persist(); renderStage(); renderRail(); }
+  if (relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); renderStage(); renderRail(); }
   if (shared.flyerId && !shared.applying && sheet.confirmed && (state.offers.length || shared.offerChunks)) publishOffers();
   const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
   $('sheetName').textContent = !sheet.name ? 'None' : sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
@@ -1174,7 +1198,7 @@ async function lookUpBeans() {
   if (!mcp || !state.offers.length) return '';
   try {
     const { found, total } = await findBeans();
-    showItemList(); persist(); renderStage(); renderRail();
+    logAs('Found beans in BigQuery'); showItemList(); persist(); renderStage(); renderRail();
     return total ? `Found beans for ${found} of ${total} products in ${BIGQUERY}.` : '';
   } catch (e) {
     return beanError(e);
@@ -1290,6 +1314,7 @@ async function loadAds(ads) {
     state.offers = withStableIds([...kept, ...offers]);
     Object.assign(sheet, { name: `AS400 ad ${ads.join(', ')}${kept.length ? ` + ${sheet.name}` : ''}`, source: 'as400', confirmed: true });
     if (!keep) Object.assign(sheet, { tabs: {}, tab: '', header: null, chat: [] });
+    logAs(`Loaded AS400 ad ${ads.join(', ')}`);
     const skuCount = showItemList();
     try { localStorage.setItem(ADS_KEY, ads.join(', ')); } catch {}
 
@@ -1452,7 +1477,7 @@ $('lookupBtn').addEventListener('click', async () => {
   setStatus(`Looking up ${boxes.length} box${boxes.length === 1 ? '' : 'es'} in the AS400 SKU file…`);
   try {
     const { tried, skipped, linked, suggested } = await findInAs400(boxes);
-    persist();
+    logAs(`Looked up ${pageLabel(state.current)} in the AS400`); persist();
     setStatus([
       `Looked up ${tried} box${tried === 1 ? '' : 'es'} in the AS400 SKU file: linked ${linked}`,
       suggested ? `; ${suggested} ${suggested === 1 ? 'has' : 'have'} suggestions to pick from (select the box)` : '',
@@ -2251,7 +2276,7 @@ async function generatePage(i, signal) {
     return e;
   } finally {
     claim?.release();
-    persist(); renderRail(); if (i === state.current) renderStage(); updateExport();
+    logAs(`Generated ${pageLabel(i)}`); persist(); renderRail(); if (i === state.current) renderStage(); updateExport();
   }
 }
 
@@ -2297,7 +2322,7 @@ $('genBtn').addEventListener('click', () => {
 $('genPageBtn').addEventListener('click', () => runBatch([state.current]));
 $('matchBtn').addEventListener('click', () => {
   const linked = matchPageFromList(state.current);
-  persist(); renderStage(); renderRail(); updateExport();
+  logAs(`Matched ${pageLabel(state.current)} from the item list`); persist(); renderStage(); renderRail(); updateExport();
   setStatus(linked ? `Linked ${linked} box${linked === 1 ? '' : 'es'} on this page to the item list. Check them, then pick the rest from the suggestions.` : 'No box on this page had a clear item-list match. Select a box to see suggestions.');
 });
 $('stopBtn').addEventListener('click', () => state.abort?.abort());
@@ -2479,6 +2504,7 @@ function deleteHotspots(indices) {
   if (!removed.length) return;
   removed.slice().reverse().forEach(({ i }) => page.hotspots.splice(i, 1));
   state.multi = new Set(); state.selected = -1;
+  if (removed.length > 1) logAs(`Deleted ${removed.length} boxes`);
   persist(); renderStage(); renderRail();
   const [first] = removed;
   setStatus(removed.length === 1 ? `Deleted hotspot ${first.i + 1}${first.h.label ? ` (${first.h.label})` : ''}. ` : `Deleted ${removed.length} hotspots. `);
@@ -2567,6 +2593,11 @@ function renderInspectorBody() {
   const sheetItems = (h.offerIds || []).map((id) => sheetIndex.get(id)).filter(Boolean);
 
   body.append(el('div', { className: 'pagetitle', textContent: `#${state.selected + 1}${h.locked ? ' · edited' : ''}` }));
+  if (shared.flyerId && h.id) {
+    const history = el('button', { className: 'linkbtn', type: 'button', textContent: 'History of this box' });
+    history.addEventListener('click', () => { flushLog(); openHistory(shared.flyerId, shared.flyer?.title || shared.flyer?.pdfName || 'This flyer', shared.flyer?.endDate || '', { id: h.id, label: h.label }); });
+    body.append(history);
+  }
   const problems = problemsFor(h, p.items);
   if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
@@ -2799,6 +2830,7 @@ $('prevBtn').addEventListener('click', () => showPage(state.current - 1));
 $('nextBtn').addEventListener('click', () => showPage(state.current + 1));
 
 function updateButtons() {
+  $('historyBtn').hidden = !shared.flyerId;
   const ready = !state.example && !!sample && sheet.confirmed && !readOnly();
   const hints = {
     checking: 'Connecting to Claude\u2026',
@@ -2936,7 +2968,7 @@ $('tidyBtn').addEventListener('click', () => {
   tidyBoxes(p.hotspots.map((h) => h.box), [], p.items || []);
   const changed = p.hotspots.filter((h, i) => JSON.stringify(h.box) !== JSON.stringify(JSON.parse(before)[i]));
   changed.forEach((h) => { h.locked = true; });
-  persist(); renderStage(); renderRail();
+  logAs(`Lined up boxes on ${pageLabel(state.current)}`); persist(); renderStage(); renderRail();
   setStatus(changed.length ? `Lined up ${changed.length} box${changed.length === 1 ? '' : 'es'}.` : 'The boxes on this page already line up.');
 });
 $('drawBtn').addEventListener('click', () => { state.drawing = !state.drawing; updateButtons(); renderStage(); });
@@ -3265,8 +3297,9 @@ function applyPlanLocally(plan, pdf, file) {
  * Writes the new pages to the shared flyer: uploads the new pictures, rewrites the page documents in
  * their new order and moves or deletes the hotspots. Others see the flyer as view-only meanwhile.
  */
-async function applyPlanShared(plan, pdf, file) {
+async function applyPlanShared(plan, pdf, file, what) {
   const old = state.pages;
+  flushLog();
   await shared.db.doc(flyerPath()).update({ updatingBy: shared.me, updatingSince: Date.now() });
   try {
     for (const [j, r] of plan.entries()) {
@@ -3301,6 +3334,18 @@ async function applyPlanShared(plan, pdf, file) {
     let done = 0;
     await Promise.all(writes.map((w) => limited(w).then(() => exportProgress(`Moving the hotspots… ${++done} of ${writes.length}`, done, writes.length))));
     await shared.db.doc(flyerPath()).update({ pageCount: plan.length, ...(file ? { pdfName: file.name } : {}), updatingBy: '', updatingSince: 0 });
+    const added = plan.filter((r) => r.kind === 'new').length;
+    const replaced = plan.filter((r) => r.kind !== 'same' && r.kind !== 'new').length;
+    const removed = old.length - plan.filter((r) => r.old !== null).length;
+    const dropped = old.flatMap((p) => p.hotspots).filter((h) => h.id && !kept.has(h.id));
+    const counts = [replaced && `${plural(replaced, 'page')} replaced`, added && `${plural(added, 'page')} added`, removed && `${plural(removed, 'page')} removed`, dropped.length && `${dropped.length === 1 ? '1 box' : `${dropped.length} boxes`} removed`].filter(Boolean);
+    if (logging()) {
+      await writeLog(shared.flyerId, {
+        at: Date.now(),
+        what: `${what}${counts.length ? `: ${counts.join(', ')}` : ''}`,
+        changes: dropped.slice(0, LOG_BOXES).map((h) => boxChange(h.id, { ...h, page: old.findIndex((p) => p.hotspots.includes(h)) }, null)),
+      });
+    }
   } catch (e) {
     await shared.db.doc(flyerPath()).update({ updatingBy: '', updatingSince: 0 }).catch(() => {});
     throw e;
@@ -3308,11 +3353,11 @@ async function applyPlanShared(plan, pdf, file) {
   await openSharedFlyer(shared.flyerId);
 }
 
-async function applyPlan(title, plan, pdf, file) {
+async function applyPlan(title, plan, pdf, file, what) {
   $('savingTitle').textContent = title;
   state.busy = true; updateButtons();
   try {
-    if (shared.flyerId) await applyPlanShared(plan, pdf, file);
+    if (shared.flyerId) await applyPlanShared(plan, pdf, file, what);
     else applyPlanLocally(plan, pdf, file);
     return true;
   } catch (e) {
@@ -3330,7 +3375,7 @@ $('updateApply').addEventListener('click', async () => {
   const plan = changePlan(rows);
   // Read first: a shared flyer reopens after the update, its details arriving a moment later.
   const campaign = readDetails().campaign;
-  if (!(await applyPlan(shared.flyerId ? 'Updating the shared flyer' : 'Updating the flyer', plan, pdf, file))) return;
+  if (!(await applyPlan(shared.flyerId ? 'Updating the shared flyer' : 'Updating the flyer', plan, pdf, file, `Updated from the revised PDF ${file?.name || ''}`.trim()))) return;
   const count = (kind) => plan.filter((r) => r.kind === kind).length;
   const redo = plan.flatMap((r, j) => (r.kind === 'new' || (r.kind === 'changed' && !r.keep) ? [j + 1] : []));
   const images = plan.filter((r) => r.kind !== 'same').map((r) => imageName(campaign, r.name, 0));
@@ -3350,7 +3395,7 @@ $('deletePageBtn').addEventListener('click', async () => {
   const removed = state.pages[i];
   // Every other page keeps the image name it has now.
   const plan = state.pages.flatMap((p, k) => (k === i ? [] : [{ kind: 'same', old: k, keep: true, name: pageNumber(p, k), replaces: '' }]));
-  if (!(await applyPlan('Deleting the page', plan, null, null))) return;
+  if (!(await applyPlan('Deleting the page', plan, null, null, `Deleted ${pageLabel(i)}`))) return;
   setStatus(`Deleted page ${i + 1}${removed.hotspots.length ? ` and its ${plural(removed.hotspots.length, 'hotspot')}` : ''}.`);
   if (!shared.flyerId) await showPage(Math.min(i, state.pages.length - 1));
 });
@@ -3399,13 +3444,13 @@ $('amplienceInput').addEventListener('change', async (ev) => {
     boxes += hotspots.length; loaded++;
   });
   state.selected = -1; state.multi = new Set();
-  persist(); renderAll();
+  logAs('Loaded hotspots from Amplience'); persist(); renderAll();
   const skipped = pages.length - loaded;
   setStatus(`Loaded ${plural(boxes, 'hotspot')} from Amplience onto ${plural(loaded, 'page')}${skipped ? `; ${plural(skipped, 'page')} of the file ${skipped === 1 ? 'matches' : 'match'} no page here` : ''}. `);
   const undo = el('button', { className: 'linkbtn', type: 'button', textContent: 'Undo' });
   undo.addEventListener('click', () => {
     before.forEach((b, i) => { const p = state.pages[i]; if (!p) return; p.hotspots.splice(0, p.hotspots.length, ...b.hotspots); p.status = b.status; });
-    persist(); renderAll();
+    logAs('Undid loading hotspots from Amplience'); persist(); renderAll();
     setStatus('Put back the hotspots from before the Amplience file.');
   });
   $('status').append(undo);
@@ -3436,6 +3481,8 @@ const shared = {
   retryTimer: 0, retryDelay: 0,  // the pending retry of failed writes, and its pause
   reconnecting: 0,               // live listeners waiting to be reopened
   relinked: false,               // the open flyer's boxes have been linked to its item list once
+  logPending: [], logNext: '', logTimer: 0,         // edit-log changes noted since the last entry, and the action's name
+  logDoc: null, logChain: Promise.resolve(), logOff: false,  // this person's current log document, its writes in order
 };
 const SHARED_KEY = 'flyer-studio:shared';
 const MAX_WRITES = 6;            // writes in flight at once; more are queued
@@ -3552,12 +3599,228 @@ function updateSyncState() {
 }
 
 /** Writes what changed on this flyer since the store last had it: details, page status, hotspots. */
+// ---------- edit log ----------
+// What each person changes in a shared flyer, kept until two weeks after its sale ends: who, when, what,
+// and for each box the fields before and after. One person's entries share a log document (LOG_ENTRIES
+// at most), so a busy flyer's log stays a small collection. History reads it only when someone opens it.
+const LOG_KEEP_MS = 14 * 864e5;
+const LOG_ENTRIES = 50;
+const LOG_DOC_BYTES = 150000;    // under the store's 256 KiB per document
+const LOG_BOXES = 200;           // box changes kept in one entry; a bigger action notes how many more
+const LOG_TEXT = 160;            // the longest value kept
+const LOG_PAGE = 20;             // log documents History reads at a time
+/** When a flyer's log is deleted: two weeks after its sale ends, or `otherwise` when it has no end date. */
+const logUntil = (endDate, otherwise = Infinity) => (endDate ? new Date(`${endDate}T23:59:59`).getTime() + LOG_KEEP_MS : otherwise);
+const clip = (value) => { const t = String(value ?? '').trim(); return t.length > LOG_TEXT ? `${t.slice(0, LOG_TEXT - 1)}…` : t; };
+const listText = (values) => clip((values || []).join(', '));
+const round = (v) => Math.round(Number(v) * 10) / 10;
+function logLinkText(f) {
+  if (!f) return '';
+  if (f.urlSlug) return clip(f.urlSlug);
+  if (f.pageID) return clip(`content ${f.pageID}`);
+  if (f.productID) return clip(`product ${f.productID}`);
+  return clip([f.category && `category ${f.category}`, ...(f.attributes || []).map((a) => `${a.attributeName} ${a.attributeValue}`), f.searchTerm && `search “${f.searchTerm}”`, f.onSale && 'on sale'].filter(Boolean).join(' · '));
+}
+let offerNames = { offers: null, names: new Map() };
+function offerText(ids) {
+  if (offerNames.offers !== state.offers) offerNames = { offers: state.offers, names: new Map([...offerIndex(state.offers)].map(([id, o]) => [id, [o.brand || o.vendor, o.desc].filter(Boolean).join(' ')])) };
+  return clip((ids || []).map((id) => offerNames.names.get(id) || id).join('; '));
+}
+// The box fields History shows, with how each reads; flags and Claude's notes are left out.
+const LOG_FIELDS = [
+  ['label', 'Product', clip], ['priceText', 'Price', clip], ['description', 'Description', clip], ['buttonText', 'Button text', clip],
+  ['box', 'Position', (b) => (b ? `${round(b.x)}, ${round(b.y)} · ${round(b.w)} × ${round(b.h)}` : '')],
+  ['page', 'Page', (n) => (Number.isInteger(n) ? pageLabel(n) : '')],
+  ['beans', 'Beans', listText], ['skus', 'SKUs', listText], ['objectIds', 'Product ids', listText],
+  ['offerIds', 'Item-list lines', offerText], ['fallback', 'Link', logLinkText], ['linkKind', 'Link type', clip],
+  ['inStoreOnly', 'In store only', (v) => (v ? 'yes' : '')], ['reviewed', 'Reviewed', (v) => (v ? 'yes' : '')],
+];
+const LOG_DETAILS = [['title', 'Title'], ['campaign', 'Campaign code'], ['startDate', 'Sale starts'], ['endDate', 'Sale ends'], ['firstPage', 'First printed page'], ['spreadsFrom', 'Spreads from']];
+const logging = () => !!shared.flyerId && !readOnly() && !shared.logOff && Date.now() < logUntil(shared.flyer?.endDate);
+
+/** What changed in one box between two saved versions; null when nothing History shows did. */
+function boxChange(id, before, after) {
+  const h = after || before;
+  const kind = !before ? 'added' : !after ? 'deleted' : 'changed';
+  const fields = kind === 'changed'
+    ? LOG_FIELDS.flatMap(([name, field, show]) => { const was = show(before[name]), now = show(after[name]); return was === now ? [] : [{ field, before: was, after: now }]; })
+    : [];
+  if (kind === 'changed' && !fields.length) return null;
+  return { box: id, label: clip(h.label), page: Number(h.page) || 0, kind, ...(fields.length ? { fields } : {}) };
+}
+
+function noteLog(change) {
+  shared.logPending.push(change);
+  if (!shared.logTimer) shared.logTimer = setTimeout(flushLog, 0);
+}
+/** Names the action under way, so its changes log as one entry ("Linked boxes to the item list"); the first name given wins. */
+function logAs(what) {
+  if (!shared.flyerId) return;
+  if (!shared.logNext) shared.logNext = what;
+  if (!shared.logTimer) shared.logTimer = setTimeout(flushLog, 0);
+}
+/** Notes a box's change before its write goes out, against what the store last held; a retried write is not noted again. */
+function noteBox(key, id, data) {
+  if (!logging()) return;
+  const was = shared.synced.get(key);
+  if (was === undefined && shared.synced.has(key)) return;
+  if (data === null ? was == null : was === canonical(data)) return;
+  const change = boxChange(id, typeof was === 'string' ? JSON.parse(was) : null, data);
+  if (change) noteLog(change);
+}
+function noteDetails(key, data) {
+  const was = shared.synced.get(key);
+  if (!logging() || typeof was !== 'string') return;
+  const before = JSON.parse(was);
+  const fields = LOG_DETAILS.flatMap(([name, field]) => (clip(before[name]) === clip(data[name]) ? [] : [{ field, before: clip(before[name]), after: clip(data[name]) }]));
+  if (fields.length) noteLog({ kind: 'details', fields });
+}
+function noteList(key, list) {
+  const was = shared.synced.get(key);
+  if (!logging() || was === undefined) return;
+  const text = (l) => (l?.name ? clip(`${l.name} (${plural(l.count || 0, 'item')})`) : '');
+  const before = text(typeof was === 'string' ? JSON.parse(was).itemList : null), after = text(list);
+  if (before !== after) noteLog({ kind: 'list', fields: [{ field: 'Item list', before, after }] });
+}
+
+function logSummary(changes) {
+  const boxes = changes.filter((c) => c.box);
+  const parts = changes.filter((c) => !c.box).map((c) => (c.kind === 'list' ? `Loaded the item list ${c.fields[0].after}` : `Changed the flyer’s ${c.fields.map((f) => f.field.toLowerCase()).join(', ')}`));
+  if (boxes.length === 1) {
+    const [c] = boxes;
+    parts.push(`${{ added: 'Added', deleted: 'Deleted', changed: 'Changed' }[c.kind]} “${c.label || 'unnamed box'}” on ${pageLabel(c.page)}`);
+  } else if (boxes.length) {
+    const pages = new Set(boxes.map((c) => c.page));
+    parts.push(`Changed ${boxes.length} boxes${pages.size === 1 ? ` on ${pageLabel([...pages][0])}` : ''}`);
+  }
+  return parts.join('; ');
+}
+/** Writes what was noted since the last flush as one entry. */
+function flushLog() {
+  clearTimeout(shared.logTimer); shared.logTimer = 0;
+  const changes = shared.logPending, what = shared.logNext;
+  shared.logPending = []; shared.logNext = '';
+  if (!changes.length || !shared.flyerId) return;
+  const boxes = changes.filter((c) => c.box);
+  writeLog(shared.flyerId, {
+    at: Date.now(),
+    what: what ? `${what}${boxes.length ? ` (${plural(boxes.length, 'box change')})` : ''}` : logSummary(changes),
+    changes: [...changes.filter((c) => !c.box), ...boxes.slice(0, LOG_BOXES)],
+    ...(boxes.length > LOG_BOXES ? { more: boxes.length - LOG_BOXES } : {}),
+  });
+}
+/** Adds an entry to this person's current log document for the flyer, starting a new one when it is full. */
+function writeLog(flyerId, entry) {
+  if (!shared.db || shared.logOff) return Promise.resolve();
+  let size = JSON.stringify(entry).length;
+  // An action this big keeps which boxes it touched, not every field.
+  if (size > LOG_DOC_BYTES) { entry.changes = entry.changes.map(({ fields, ...c }) => c); size = JSON.stringify(entry).length; }
+  let doc = shared.logDoc;
+  if (!doc || doc.flyerId !== flyerId || doc.entries.length >= LOG_ENTRIES || doc.size + size > LOG_DOC_BYTES) {
+    doc = shared.logDoc = { flyerId, id: newId('l'), from: entry.at, entries: [], size: 0 };
+  }
+  doc.entries.push(entry); doc.size += size;
+  const data = { by: shared.me, from: doc.from, at: entry.at, entries: doc.entries.slice() };
+  const ref = shared.db.doc(`flyers/${flyerId}/log/${doc.id}`);
+  // A full store stops the log for this visit; editing goes on.
+  shared.logChain = shared.logChain.then(() => limited(() => ref.set(data))).catch((e) => { if (e?.code === 'quota_exceeded' || e?.code === 'invalid_argument') shared.logOff = true; });
+  return shared.logChain;
+}
+
+/** Deletes the logs of flyers whose sale ended more than two weeks ago, and of deleted flyers as long after. */
+async function pruneLogs() {
+  if (!shared.db || shared.canWrite === false) return;
+  const now = Date.now();
+  const deleted = await shared.db.collection('deletedFlyers').get().then((snap) => snap.docs.map((d) => ({ id: d.id, data: d.data() }))).catch(() => []);
+  const expired = [
+    ...shared.flyers.filter((f) => logUntil(f.data.endDate) < now).map((f) => ({ id: f.id })),
+    ...deleted.filter((f) => logUntil(f.data.endDate, Number(f.data.deletedAt) + LOG_KEEP_MS) < now).map((f) => ({ id: f.id, record: true })),
+  ];
+  for (const { id, record } of expired) {
+    const snap = await shared.db.collection(`flyers/${id}/log`).limit(100).get().catch(() => null);
+    if (!snap) continue;
+    await Promise.all(snap.docs.map((d) => limited(() => shared.db.doc(`flyers/${id}/log/${d.id}`).delete()).catch(() => {})));
+    if (record && snap.docs.length < 100) await shared.db.doc(`deletedFlyers/${id}`).delete().catch(() => {});
+  }
+}
+
+const historyView = { flyerId: '', title: '', endDate: '', box: '', boxLabel: '', docs: [], oldest: Infinity, done: false };
+/** Opens History for a flyer (deleted ones too), or for one of its boxes. */
+async function openHistory(flyerId, title, endDate, box = null) {
+  Object.assign(historyView, { flyerId, title, endDate, box: box?.id || '', boxLabel: box?.label || '', docs: [], oldest: Infinity, done: false });
+  $('historyList').replaceChildren();
+  $('historyMore').hidden = true;
+  if (!$('historyDlg').open) $('historyDlg').showModal();
+  await loadHistory();
+}
+async function loadHistory() {
+  const { flyerId } = historyView;
+  $('historyStatus').textContent = 'Loading…';
+  $('historyMore').disabled = true;
+  try {
+    let query = shared.db.collection(`flyers/${flyerId}/log`);
+    if (historyView.oldest < Infinity) query = query.where('at', '<', historyView.oldest);
+    const snap = await query.orderBy('at', 'desc').limit(LOG_PAGE).get();
+    if (flyerId !== historyView.flyerId) return;
+    const docs = snap.docs.map((d) => d.data());
+    historyView.docs.push(...docs);
+    historyView.oldest = Math.min(historyView.oldest, ...docs.map((d) => Number(d.at) || 0));
+    historyView.done = docs.length < LOG_PAGE;
+    await renderHistory();
+  } catch {
+    $('historyStatus').textContent = 'The history could not be loaded. Close it and try again.';
+  } finally {
+    $('historyMore').disabled = false;
+  }
+}
+/** A change as History lists it; `named` when the entry's own line already names its one box. */
+function changeLines(c, named) {
+  const where = c.box ? `“${c.label || 'Unnamed box'}” on ${pageLabel(c.page)}` : '';
+  if (c.kind === 'added') return named ? [] : [`Added ${where}`];
+  if (c.kind === 'deleted') return named ? [] : [`Deleted ${where}`];
+  return (c.fields || []).map((f) => `${where && !named && !historyView.box ? `${where} · ` : ''}${f.field}: ${f.before || '(empty)'} → ${f.after || '(empty)'}`);
+}
+async function renderHistory() {
+  const { box, boxLabel, title, endDate } = historyView;
+  const until = logUntil(endDate);
+  $('historyLead').textContent = `${title}. Changes are kept ${until < Infinity ? `until ${new Date(until).toLocaleDateString()}` : 'until two weeks after the sale ends'}.`;
+  $('historyFilter').hidden = !box;
+  if (box) $('historyFilterText').textContent = `Showing changes to “${boxLabel || 'this box'}”. `;
+  const entries = historyView.docs
+    .flatMap((d) => (d.entries || []).map((e) => ({ ...e, by: d.by })))
+    .filter((e) => !box || (e.changes || []).some((c) => c.box === box))
+    .sort((a, b) => b.at - a.at);
+  const ids = [...new Set(entries.map((e) => e.by).filter(Boolean))];
+  const profiles = shared.user && ids.length ? await shared.user.profiles(ids).catch(() => ({})) : {};
+  const who = (id) => (id === shared.me ? 'You' : profiles[id]?.name || 'Someone');
+  $('historyList').replaceChildren(...entries.map((e) => {
+    // A one-box entry's own line ("Changed “Nike Socks” on page 2") already names the box.
+    const named = (e.changes || []).length === 1 && !!e.changes[0].box && /^(Changed|Added|Deleted) “/.test(e.what);
+    const lines = (e.changes || []).filter((c) => !box || c.box === box).flatMap((c) => changeLines(c, named));
+    const when = new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const item = el('li', {}, el('div', { className: 'when', textContent: `${when} · ${who(e.by)}` }), el('div', { textContent: e.what }));
+    if (e.more && !box) lines.push(`and ${plural(e.more, 'more box change')}`);
+    if (!lines.length) return item;
+    const list = el('ul', {}, ...lines.map((t) => el('li', { textContent: t })));
+    item.append(lines.length > 3 ? el('details', {}, el('summary', { textContent: `${plural(lines.length, 'change')}` }), list) : list);
+    return item;
+  }));
+  $('historyStatus').textContent = entries.length ? '' : historyView.done ? (box ? 'No changes to this box are recorded.' : 'No changes are recorded.') : 'No changes in the latest records; show older ones below.';
+  $('historyMore').hidden = historyView.done;
+}
+$('historyClose').addEventListener('click', () => $('historyDlg').close());
+$('historyMore').addEventListener('click', loadHistory);
+$('historyAll').addEventListener('click', () => { historyView.box = ''; renderHistory(); });
+$('historyBtn').addEventListener('click', () => { flushLog(); openHistory(shared.flyerId, shared.flyer?.title || shared.flyer?.pdfName || 'This flyer', shared.flyer?.endDate || ''); });
+
 function syncShared() {
   if (!shared.flyerId || readOnly()) return;
   // Details are written only once the flyer's own have arrived, so empty fields never overwrite them.
   if (shared.flyer) {
     const d = readDetails();
-    write(`${flyerPath()}#details`, flyerPath(), { title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, firstPage: d.firstPage, spreadsFrom: d.spreadsFrom }, true);
+    const details = { title: d.title, campaign: d.campaign, startDate: d.startDate, endDate: d.endDate, firstPage: d.firstPage, spreadsFrom: d.spreadsFrom };
+    noteDetails(`${flyerPath()}#details`, details);
+    write(`${flyerPath()}#details`, flyerPath(), details, true);
   }
   const present = new Set();
   state.pages.forEach((p, page) => {
@@ -3567,11 +3830,16 @@ function syncShared() {
       const key = flyerPath('hotspots', h.id);
       present.add(key);
       const { id, ...fields } = h;
-      write(key, key, { ...fields, page, order });
+      const data = { ...fields, page, order };
+      noteBox(key, h.id, data);
+      write(key, key, data);
     });
   });
   for (const key of shared.synced.keys()) {
-    if (key.startsWith(flyerPath('hotspots', '')) && !present.has(key) && shared.synced.get(key) !== null) write(key, key, null);
+    if (key.startsWith(flyerPath('hotspots', '')) && !present.has(key) && shared.synced.get(key) !== null) {
+      noteBox(key, key.slice(key.lastIndexOf('/') + 1), null);
+      write(key, key, null);
+    }
   }
 }
 
@@ -3588,7 +3856,9 @@ function publishOffers() {
   chunks.forEach((offers, n) => { const path = flyerPath('offers', `c${n}`); write(path, path, { n, offers }); });
   for (let n = chunks.length; n < shared.offerChunks; n++) { const path = flyerPath('offers', `c${n}`); write(path, path, null); }
   shared.offerChunks = chunks.length;
-  write(`${flyerPath()}#itemList`, flyerPath(), { itemList: { name: sheet.name, source: sheet.source, count: state.offers.length } }, true);
+  const itemList = { name: sheet.name, source: sheet.source, count: state.offers.length };
+  noteList(`${flyerPath()}#itemList`, itemList);
+  write(`${flyerPath()}#itemList`, flyerPath(), { itemList }, true);
 }
 
 /**
@@ -3732,7 +4002,7 @@ function applyHotspots(docs, render = true) {
   state.selected = selectedId ? currentPage().hotspots.findIndex((h) => h.id === selectedId) : -1;
   if (state.multi.size) state.multi = new Set([...state.multi].filter((i) => i < currentPage().hotspots.length));
   // The item list may have arrived before the boxes did: link them to it once they are here.
-  if (!shared.relinked && state.offers.length) { shared.relinked = true; if (relinkHotspots()) persist(); }
+  if (!shared.relinked && state.offers.length) { shared.relinked = true; if (relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); } }
   if (render) refresh();
 }
 
@@ -3753,6 +4023,7 @@ function renderAll() { renderRail(); renderStage(); updateButtons(); renderPeopl
 /** Leaves the shared flyer that is open, if any; its pending writes still finish. */
 function closeShared() {
   if (!shared.flyerId) return;
+  flushLog();
   shared.unsubscribe.forEach((stop) => stop());
   clearTimeout(shared.retryTimer);
   Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false, retryTimer: 0, retryDelay: 0, reconnecting: 0, relinked: false });
@@ -3815,6 +4086,7 @@ async function shareFlyer() {
     let done = 0;
     await Promise.all(writes.map((w) => limited(w).then(() => exportProgress(`Copying the hotspots… ${++done} of ${writes.length}`, done, writes.length))));
     await shared.db.doc(base).update({ ready: true });
+    await writeLog(id, { at: Date.now(), what: `Shared the flyer: ${plural(total, 'page')}`, changes: [] });
     exportProgress(null);
     await openSharedFlyer(id);
     // Opening the shared flyer starts from its (still empty) item list; this flyer's goes up now.
@@ -3838,6 +4110,11 @@ async function deleteSharedFlyer(id) {
   const base = `flyers/${id}`;
   const wasOpen = shared.flyerId === id;
   if (wasOpen) closeShared();
+  // The flyer's edit log stays, with a record of who deleted it, until two weeks after its sale ends.
+  const flyer = shared.flyers.find((f) => f.id === id)?.data || {};
+  const deletedAt = Date.now();
+  await shared.db.doc(`deletedFlyers/${id}`).set({ title: flyer.title || flyer.pdfName || 'Untitled flyer', campaign: flyer.campaign || '', endDate: flyer.endDate || '', createdBy: flyer.createdBy || '', deletedBy: shared.me, deletedAt }).catch(() => {});
+  await writeLog(id, { at: deletedAt, what: 'Deleted the flyer', changes: [] });
   const collections = ['pages', 'hotspots', 'offers'];
   const snaps = await Promise.all(collections.map((c) => shared.db.collection(`${base}/${c}`).get()));
   const images = snaps[0].docs.map((d) => d.data().image).filter(Boolean);
@@ -3861,7 +4138,9 @@ async function renderFlyers() {
   $('flyersList').replaceChildren(...(shared.flyers.length ? shared.flyers.map(({ id, data }) => {
     const open = el('button', { className: 'btn primary', type: 'button', textContent: shared.flyerId === id ? 'Open now' : 'Open', disabled: shared.flyerId === id || !data.ready });
     open.addEventListener('click', () => { $('flyersDlg').close(); openSharedFlyer(id); });
-    const acts = el('div', { className: 'acts' }, open);
+    const history = el('button', { className: 'btn', type: 'button', textContent: 'History' });
+    history.addEventListener('click', () => { flushLog(); openHistory(id, data.title || data.pdfName || 'Untitled flyer', data.endDate || ''); });
+    const acts = el('div', { className: 'acts' }, open, history);
     if (shared.assets) {
       let confirming = false;
       const del = el('button', { className: 'btn', type: 'button', textContent: 'Delete' });
@@ -3881,6 +4160,26 @@ async function renderFlyers() {
     item.setAttribute('aria-current', String(shared.flyerId === id));
     return item;
   }) : [el('li', { className: 'sub', textContent: 'No shared flyers yet.' })]));
+  renderDeletedFlyers();
+}
+
+/** Flyers deleted while their edit log is kept: who deleted each, and its History. */
+async function renderDeletedFlyers() {
+  const deleted = await shared.db.collection('deletedFlyers').orderBy('deletedAt', 'desc').limit(50).get()
+    .then((snap) => snap.docs.map((d) => ({ id: d.id, data: d.data() })))
+    .catch(() => []);
+  const ids = [...new Set(deleted.map((f) => f.data.deletedBy).filter(Boolean))];
+  const profiles = shared.user && ids.length ? await shared.user.profiles(ids).catch(() => ({})) : {};
+  $('deletedHead').hidden = $('deletedList').hidden = !deleted.length;
+  $('deletedList').replaceChildren(...deleted.map(({ id, data }) => {
+    const history = el('button', { className: 'btn', type: 'button', textContent: 'History' });
+    history.addEventListener('click', () => openHistory(id, `${data.title} (deleted)`, data.endDate || ''));
+    const who = data.deletedBy === shared.me ? 'you' : profiles[data.deletedBy]?.name || 'someone';
+    return el('li', {},
+      el('span', { className: 'name', textContent: data.title || 'Untitled flyer' }),
+      el('div', { className: 'acts' }, history),
+      el('span', { className: 'sub', textContent: [data.campaign, `deleted by ${who} on ${new Date(data.deletedAt).toLocaleDateString()}`].filter(Boolean).join(' · ') }));
+  }));
 }
 
 $('flyersBtn').addEventListener('click', () => { renderFlyers(); $('flyersDlg').showModal(); });
@@ -3896,8 +4195,11 @@ async function startShared(db, assets, user, room) {
   $('flyersBtn').hidden = false;
   let reopen = '';
   try { reopen = localStorage.getItem(SHARED_KEY) || ''; } catch {}
+  let pruning = 0;
   db.collection('flyers').orderBy('createdAt', 'desc').limit(100).onSnapshot((snap) => {
     shared.flyers = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    // Expired logs go once a visit, after the flyer has had time to open.
+    if (!pruning) pruning = setTimeout(() => pruneLogs().catch(() => {}), 15000);
     if ($('flyersDlg').open) renderFlyers();
     updateExport();
     if (reopen && state.example && shared.flyers.some((f) => f.id === reopen && f.data.ready)) openSharedFlyer(reopen);
