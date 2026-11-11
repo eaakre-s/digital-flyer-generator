@@ -5,6 +5,7 @@
  * when there is none (or several), values come from the whole catalogue and there is no count.
  */
 
+import { searchMany } from './ace';
 import type { FallbackLink } from './link';
 import { linkRefinements, refinementKeyOf } from './urlRules';
 
@@ -77,6 +78,84 @@ export async function linkCount(link: FallbackLink, name: string | undefined): P
   if (!filters) return null;
   const result = await search({ facetFilters: filters });
   return typeof result.totalHits === 'number' ? result.totalHits : null;
+}
+
+/** Item-list brand names mapped to the spelling Scheels Search files products under ("7Diamonds" → "7 Diamonds"). */
+export type BrandSpellings = Map<string, string>;
+
+const isBrand = (attributeName: string) => attributeName.trim().toLowerCase() === 'brand';
+const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+const words = (name: string) => name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/** Whether one name is the other with a single letter added or dropped. */
+function oneLetterApart(a: string, b: string): boolean {
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  if (long.length - short.length !== 1) return false;
+  let i = 0;
+  while (i < short.length && short[i] === long[i]) i++;
+  return short.slice(i) === long.slice(i + 1);
+}
+
+// The same brand ignoring spaces, case and punctuation ("7Diamonds"), one name the other's first words
+// ("Benchmade" for "Benchmade Knife Company"), or a letter doubled or dropped in a longer name ("Mizzzen + Main").
+function sameBrand(wanted: string, listed: string): boolean {
+  const a = squash(wanted);
+  const b = squash(listed);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = words(wanted).length <= words(listed).length ? [words(wanted), words(listed)] : [words(listed), words(wanted)];
+  if (short.join('').length >= 4 && short.every((w, i) => long[i] === w)) return true;
+  return a.length >= 6 && oneLetterApart(a, b);
+}
+
+/** The brands these links filter on, each once. */
+export const linkBrands = (links: FallbackLink[]) => [
+  ...new Set(
+    links.flatMap((link) =>
+      (link.attributes ?? [])
+        .filter((a) => isBrand(a.attributeName))
+        .flatMap((a) => a.attributeValue.split('|').map((value) => value.trim()))
+        .filter(Boolean),
+    ),
+  ),
+];
+
+/**
+ * For each brand Scheels Search files no products under as written, its spelling there, found among the
+ * brands a search for the name returns (the one with the most products when several are close). `unknown`
+ * lists the brands with nothing close.
+ */
+export async function brandSpellings(brands: string[]): Promise<{ spellings: BrandSpellings; unknown: string[] }> {
+  const key = refinementKeyOf('brand');
+  const counts = await searchMany(
+    brands.map((brand) => ({ pageSize: 1, attributesToRetrieve: ['objectID'], facetFilters: [[filterOf(key, brand)]] })),
+  );
+  const missing = brands.filter((_, i) => !Number(counts[i]?.totalHits));
+  const found = await searchMany(missing.map((brand) => ({ query: brand, pageSize: 1, attributesToRetrieve: ['objectID'], facets: [key] })));
+  const spellings: BrandSpellings = new Map();
+  const unknown: string[] = [];
+  missing.forEach((brand, i) => {
+    const best = Object.entries(found[i]?.facets?.[key]?.values ?? {})
+      .map(([value, count]) => ({ value, count: Number(count) || 0 }))
+      .filter(({ value }) => sameBrand(brand, value))
+      .sort((a, b) => b.count - a.count)[0];
+    if (best) spellings.set(brand, best.value);
+    else unknown.push(brand);
+  });
+  return { spellings, unknown };
+}
+
+/** The link with its brand filters spelled as Scheels Search spells them. */
+export function respellBrands(link: FallbackLink, spellings?: BrandSpellings): FallbackLink {
+  if (!spellings?.size || !link.attributes?.some((a) => isBrand(a.attributeName))) return link;
+  return {
+    ...link,
+    attributes: link.attributes.map((a) =>
+      isBrand(a.attributeName)
+        ? { ...a, attributeValue: a.attributeValue.split('|').map((value) => spellings.get(value.trim()) ?? value.trim()).join('|') }
+        : a,
+    ),
+  };
 }
 
 /**

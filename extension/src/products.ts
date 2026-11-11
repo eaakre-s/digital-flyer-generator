@@ -1,4 +1,5 @@
 import { decide, fetchProducts, findBySkus, searchBatch, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
+import { respellBrands, type BrandSpellings } from './facets';
 import type { Hotspot, StudioFlyer } from './flyer';
 import { fillFromProducts, linkPath } from './link';
 
@@ -8,14 +9,15 @@ export type Matches = Match[][];
 /**
  * Hotspots that already carry SKUs (from the item list) are confirmed by SKU. Items without SKUs arrive with
  * Scheels Search ids built from vendor number + style (from the item list, or typed into Studio's SKU field),
- * which are looked up directly. The rest are found by their printed name. In-store-only hotspots are left as
- * they are.
+ * which are looked up directly. The rest are found by their printed name, except boxes Flyer Studio marks as
+ * covering a whole range, which keep their link to the listing. In-store-only hotspots are left as they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
   const bySku = hotspots.filter((h) => !h.inStoreOnly && h.skus.length);
   const byStyle = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && h.objectIds?.length);
-  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && !h.objectIds?.length);
+  const wholeRange = (h: Hotspot) => !h.inStoreOnly && !!h.wholeRange && !h.skus.length && !h.objectIds?.length;
+  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && !h.objectIds?.length && !wholeRange(h));
   const total = bySku.length + byStyle.length + byName.length;
   const skuResults = await findBySkus(bySku.map((h) => h.skus));
   const styleProducts = await fetchProducts([...new Set(byStyle.flatMap((h) => h.objectIds ?? []))]);
@@ -34,6 +36,7 @@ export async function matchProducts(flyer: StudioFlyer, onProgress: (done: numbe
   return flyer.pages.map((page) =>
     page.hotspots.map((h): Match => {
       if (h.inStoreOnly) return { status: 'instore', candidates: [], chosen: [] };
+      if (wholeRange(h)) return { status: 'range', candidates: [], chosen: [] };
       const found = skuMatch.get(h);
       if (found) {
         return found.length
@@ -54,12 +57,16 @@ const linkSource = (match: Match) => {
 /** The hotspot's fallback link with the category and brand Scheels Search found filled in where empty. */
 export const filledFallback = (hotspot: Hotspot, match: Match) => fillFromProducts(hotspot.fallback, linkSource(match));
 
+/** The fallback link the import saves: filled in from the products found, with brands spelled as Scheels Search spells them. */
+const savedFallback = (hotspot: Hotspot, match: Match, spellings?: BrandSpellings) =>
+  respellBrands(filledFallback(hotspot, match), spellings);
+
 /**
  * The flyer with each hotspot's products applied as objectIDs (beans), and the fallback link filled in from
- * the products found. SKUs are left as they came: a box that has a product gets SKUs only from a person, who
- * adds them to point at particular colours or sizes.
+ * the products found, its brands spelled as `spellings` says. SKUs are left as they came: a box that has a
+ * product gets SKUs only from a person, who adds them to point at particular colours or sizes.
  */
-export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlyer {
+export function withChosenSkus(flyer: StudioFlyer, matches: Matches, spellings?: BrandSpellings): StudioFlyer {
   return {
     ...flyer,
     pages: flyer.pages.map((page, p) => ({
@@ -67,7 +74,7 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
       hotspots: page.hotspots.map((hotspot, i) => {
         const match = matches[p]?.[i];
         if (!match || match.status === 'instore') return hotspot;
-        const h = { ...hotspot, fallback: filledFallback(hotspot, match) };
+        const h = { ...hotspot, fallback: savedFallback(hotspot, match, spellings) };
         // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
         const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
         if (match.status === 'offline' && !chosen.length) return { ...h, objectIds: [] };
@@ -78,7 +85,7 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches): StudioFlye
 }
 
 export function countByStatus(matches: Matches): Record<MatchStatus | 'unresolved', number> {
-  const counts = { kept: 0, offline: 0, instore: 0, matched: 0, review: 0, none: 0, unresolved: 0 };
+  const counts = { kept: 0, offline: 0, instore: 0, range: 0, matched: 0, review: 0, none: 0, unresolved: 0 };
   for (const match of matches.flat()) {
     counts[match.status]++;
     if (match.status === 'review' && !match.chosen.length) counts.unresolved++;
@@ -90,6 +97,7 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
   kept: 'From item list',
   offline: 'Not online yet',
   instore: 'In store only',
+  range: 'Whole range',
   matched: 'Matched',
   review: 'Check',
   none: 'Not found',
@@ -228,7 +236,7 @@ export function renderProducts(
   container: HTMLElement,
   flyer: StudioFlyer,
   matches: Matches,
-  options: { reviewOnly: boolean; readOnly: boolean; onChange: () => void },
+  options: { reviewOnly: boolean; readOnly: boolean; spellings?: BrandSpellings; onChange: () => void },
 ) {
   container.replaceChildren();
   flyer.pages.forEach((page, p) =>
@@ -257,15 +265,22 @@ export function renderProducts(
           el('p', {
             className: 'muted',
             textContent: hotspot.skus.length
-              ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. Until they are, it links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`
-              : `Its item-list style was not found on scheels.com. It links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}; search Scheels below if it is online.`,
+              ? `None of its ${hotspot.skus.length} item-list SKUs is on scheels.com yet. Until they are, it links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)}.`
+              : `Its item-list style was not found on scheels.com. It links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)}; search Scheels below if it is online.`,
+          }),
+        );
+      } else if (match.status === 'range' && !showCandidates) {
+        row.append(
+          el('p', {
+            className: 'muted',
+            textContent: `Covers a whole range in the item list, so it links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)}. Search Scheels below to show particular products instead.`,
           }),
         );
       } else if (match.status === 'none' && !showCandidates) {
         row.append(
           el('p', {
             className: 'muted',
-            textContent: `Scheels Search found nothing. This hotspot links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`,
+            textContent: `Scheels Search found nothing. This hotspot links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)}.`,
           }),
         );
       } else {
@@ -293,7 +308,7 @@ export function renderProducts(
           row.append(
             el('p', {
               className: 'muted',
-              textContent: `Nothing ticked: this hotspot links to ${linkPath(filledFallback(hotspot, match), hotspot.label)}.`,
+              textContent: `Nothing ticked: this hotspot links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)}.`,
             }),
           );
         }

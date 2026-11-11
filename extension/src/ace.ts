@@ -23,9 +23,10 @@ export interface Candidate {
 /**
  * kept: SKUs came with the hotspot and some are online (candidates are those products, all chosen).
  * offline: SKUs came with the hotspot but none is online yet. instore: in-store-only, not matched.
+ * range: Flyer Studio marked it as covering a whole range; it keeps its listing link and is not searched.
  * matched / review / none: found by name search, automatically, needing a check, or not at all.
  */
-export type MatchStatus = 'kept' | 'offline' | 'instore' | 'matched' | 'review' | 'none';
+export type MatchStatus = 'kept' | 'offline' | 'instore' | 'range' | 'matched' | 'review' | 'none';
 
 export interface Match {
   status: MatchStatus;

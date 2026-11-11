@@ -4,6 +4,7 @@ import { copyText } from './copy';
 import { devSdk } from './dev-sdk';
 import { buildPages, findImage, parseStudioExport, type FlyerPage, type ImageLink, type MediaSettings, type StudioFlyer } from './flyer';
 import { openEditor, refreshEditor } from './editor';
+import { brandSpellings, linkBrands, type BrandSpellings } from './facets';
 import { countByStatus, matchProducts, renderProducts, withChosenSkus, type Matches } from './products';
 
 type Sdk = Pick<ContentFieldExtension<FlyerPage[]>, 'field' | 'form' | 'frame' | 'params' | 'mediaLink'>;
@@ -19,6 +20,8 @@ const state: {
   status: ImageStatus[];
   images: (ImageLink | null)[];
   matches: Matches | null;
+  /** Brands in the export's links that Scheels Search spells differently, or doesn't know at all. */
+  brands: { spellings: BrandSpellings; unknown: string[] } | null;
   matching: boolean;
   reviewOnly: boolean;
   readOnly: boolean;
@@ -28,6 +31,7 @@ const state: {
   status: [],
   images: [],
   matches: null,
+  brands: null,
   matching: false,
   reviewOnly: true,
   readOnly: false,
@@ -176,6 +180,7 @@ function renderMatches() {
   if (!flyer) return;
   const summary = $('productSummary');
   const toggle = $('reviewToggle') as HTMLButtonElement;
+  renderBrands();
   if (!state.matches) {
     $('productList').replaceChildren();
     toggle.hidden = true;
@@ -186,6 +191,7 @@ function renderMatches() {
     counts.kept ? `${counts.kept} confirmed from the item list` : '',
     counts.offline ? `${counts.offline} with item-list SKUs not online yet` : '',
     counts.instore ? `${counts.instore} in store only` : '',
+    counts.range ? `${counts.range} for a whole range, linked to their listing` : '',
     `${counts.matched} matched by name`,
     `${counts.review} to check${counts.unresolved ? ` (${counts.unresolved} with nothing ticked)` : ''}`,
     `${counts.none} not found`,
@@ -197,8 +203,29 @@ function renderMatches() {
   renderProducts($('productList'), flyer, state.matches, {
     reviewOnly: state.reviewOnly,
     readOnly: state.readOnly,
+    spellings: state.brands?.spellings,
     onChange: renderMatches,
   });
+}
+
+/** What the import changes in the links' brand names, and the brands Scheels Search doesn't know. */
+function renderBrands() {
+  const note = $('brandSummary');
+  const brands = state.brands;
+  const lines = [];
+  if (brands?.spellings.size) {
+    const changes = [...brands.spellings].map(([from, to]) => `${from} → ${to}`).join(', ');
+    lines.push(`Brand names in links are changed to Scheels Search's spelling: ${changes}.`);
+  }
+  if (brands?.unknown.length) {
+    const one = brands.unknown.length === 1;
+    lines.push(
+      `Scheels Search has no brand named ${brands.unknown.join(', ')}, so links filtered on ${one ? 'it' : 'them'} list nothing. ` +
+        `Correct ${one ? 'it' : 'them'} in Flyer Studio, or in each hotspot's link after importing.`,
+    );
+  }
+  note.textContent = lines.join(' ');
+  note.hidden = !lines.length;
 }
 
 async function findProducts() {
@@ -207,14 +234,20 @@ async function findProducts() {
   const run = state.run;
   state.matching = true;
   state.matches = null;
+  state.brands = null;
   renderMatches();
   renderPages();
   try {
-    const matches = await matchProducts(flyer, (done, total) => {
-      $('productSummary').textContent = `Searching Scheels for ${done} of ${total} products…`;
-    });
+    const links = flyer.pages.flatMap((page) => page.hotspots.filter((h) => !h.inStoreOnly).map((h) => h.fallback));
+    const [matches, brands] = await Promise.all([
+      matchProducts(flyer, (done, total) => {
+        $('productSummary').textContent = `Searching Scheels for ${done} of ${total} products…`;
+      }),
+      brandSpellings(linkBrands(links)).catch(() => null),
+    ]);
     if (run !== state.run || flyer !== state.flyer) return;
     state.matches = matches;
+    state.brands = brands;
   } catch (error) {
     $('productSummary').textContent = `Scheels Search could not be reached (${(error as Error).message}). You can still import; hotspots keep any SKUs from Flyer Studio.`;
   } finally {
@@ -257,7 +290,7 @@ async function apply() {
     return;
   }
   try {
-    const flyer = state.matches ? withChosenSkus(state.flyer, state.matches) : state.flyer;
+    const flyer = state.matches ? withChosenSkus(state.flyer, state.matches, state.brands?.spellings) : state.flyer;
     const errors = await sdk.field.setValue(buildPages(flyer, state.images));
     if (Array.isArray(errors) && errors.length) {
       setMessage(`Amplience rejected the pages: ${errors.map((e) => e.message).join('; ')}`, 'error');

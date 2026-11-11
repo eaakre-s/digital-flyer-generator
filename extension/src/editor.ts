@@ -2,6 +2,7 @@ import { fetchProducts, searchBatch, type Candidate } from './ace';
 import {
   findImage,
   parseStudioExport,
+  savedHotspot,
   toStudioExport,
   type FlyerDetails,
   type FlyerPage,
@@ -134,7 +135,7 @@ function applyChanges(): Promise<void> {
   // Half-typed filter rows and emptied fields are left out of what is saved.
   const pages = structuredClone(state.pages).map((page) => ({
     ...page,
-    hotspots: page.hotspots.map((h) => ({ ...h, fallback: toFallbackLink(h.fallback) })),
+    hotspots: page.hotspots.map((h) => ({ ...savedHotspot(h), fallback: toFallbackLink(h.fallback) })),
   }));
   applying = deps.write(pages).then((error) => {
     applying = null;

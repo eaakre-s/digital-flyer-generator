@@ -441,7 +441,8 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
         <p>Create (or open) a <b>Digital Flyer</b> content item. In its Pages field, choose the <code>.json</code> file. The importer then:</p>
         <ul>
           <li>shows the title, campaign code and dates to copy into the fields above it;</li>
-          <li>searches Scheels for every product and ticks the ones whose brand, model and printed price match. Click <b>Show only ones to check</b> and tick the right product for the rest; leave all unticked to use a search link;</li>
+          <li>keeps boxes for a whole range (an item-list line marked All) linked to their listing, and changes brand names in links to Scheels' spelling;</li>
+          <li>searches Scheels for every other product and ticks the ones whose brand, model and printed price match. Click <b>Show only ones to check</b> and tick the right product for the rest; leave all unticked to use a search link;</li>
           <li>checks that each page image is published.</li>
         </ul>
         <p>Click <b>Import pages into this item</b>, then <b>Save</b> the item.</p>
@@ -715,10 +716,24 @@ function relinkHotspots() {
       // Beans found after a box was linked reach it here, unless someone typed the box's own; the SKUs
       // the item list filled in then go, while SKUs someone typed stay.
       if (derived?.beans.length && !h.beansEdited && derived.beans.join(',') !== (h.beans || []).join(',')) { h.beans = derived.beans; changed++; }
+      // Products a whole-range line lists leave its boxes, unless someone typed them.
+      const ranges = ids.map((id) => index.get(id)).filter(coversRange);
+      if (ranges.length && derived) {
+        const rangeBeans = new Set(ranges.flatMap((o) => o.beans || []));
+        const rangeSkus = new Set(ranges.flatMap((o) => o.skus || []).map(normalizeSku));
+        const beans = (h.beans || []).filter((b) => !rangeBeans.has(b) || derived.beans.includes(b));
+        if (!h.beansEdited && beans.length < (h.beans || []).length) { h.beans = beans; changed++; }
+        const kept = skus.filter((sku) => !rangeSkus.has(sku) || derived.skus.includes(sku));
+        if (!h.skusEdited && kept.length < skus.length) { h.skus = kept; changed++; }
+      }
       const filledIn = skus.length > 0 && skus.length === derived?.skus.length && skus.every((sku) => derived.skus.includes(sku));
       if (filledIn && h.beans?.length && !h.skusEdited) { h.skus = []; changed++; }
+      // A whole-brand listing nobody edited gains the category (and gender) its item-list lines name.
+      const narrowed = derived?.fallback.category ? derived.fallback : null;
+      const wholeBrand = narrowed && { attributes: narrowed.attributes.filter((a) => a.attributeName === 'brand') };
+      if (narrowed && !h.linkEdited && canonical(h.fallback || {}) === canonical(wholeBrand)) { h.fallback = narrowed; changed++; }
       // Boxes linked to items that have no SKU get the items' style-based ids (added after some boxes were linked).
-      if (!skus.length && derived) {
+      if (!h.skus?.length && derived) {
         if (derived.styleIds.join(',') !== (h.objectIds || []).join(',')) { h.objectIds = derived.styleIds; changed++; continue; }
       }
       if (ids.join(',') !== before) changed++;
@@ -1802,6 +1817,87 @@ Use {"hotspots":[]} when the page has no products. Dense pages can have 20 or mo
 
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// A whole-range offer ("all Nike socks") links to a listing of the brand. The listing is narrowed to a
+// Scheels category when the offer's item-list lines all name that one category ("Socks", "Men's
+// Underwear"), or when they name nothing past the brand and the box's own name does. Genders before
+// the category ("Boys' or Girls'") narrow it further.
+const LISTING_GENDERS = { men: 'Men', mens: 'Men', women: 'Women', womens: 'Women', boys: 'Boys', girls: 'Girls', kids: 'Boys|Girls', youth: 'Boys|Girls' };
+const LISTING_JOINS = new Set(['and', 'or']);
+// Flyer words for the site's Shoes and Clothing; the categories named Footwear and Apparel are running gear.
+// "Guns" names firearms on the site but toy blasters on flyers too, so it sets no category.
+const LISTING_ALIASES = { footwear: 'shoes', apparel: 'clothing', guns: '' };
+const listingWords = (text) => String(text || '').toLowerCase().replace(/[’']/g, '').replace(/&/g, ' and ').split(/[^a-z0-9]+/).filter(Boolean);
+let categoriesByWords = null;
+/** The key of the category with exactly this name (a plural or singular last word also counts); '' when none or unclear. */
+function categoryNamed(words) {
+  if (!categoriesByWords) {
+    categoriesByWords = new Map();
+    for (const [name, slug] of CATEGORIES) {
+      const key = listingWords(name).join(' ');
+      categoriesByWords.set(key, [...(categoriesByWords.get(key) || []), slug]);
+    }
+  }
+  const alias = LISTING_ALIASES[words.join(' ')];
+  if (alias === '') return '';
+  words = (alias || words.join(' ')).split(' ');
+  const last = words[words.length - 1];
+  const forms = [words, [...words.slice(0, -1), last.endsWith('s') ? last.slice(0, -1) : `${last}s`]].map((w) => w.join(' '));
+  for (const form of forms) {
+    const slugs = categoriesByWords.get(form) || [];
+    // Several categories share some names ("Accessories"); the one keyed by the name itself is the main one.
+    const main = slugs.find((slug) => slug === form.replace(/ /g, '-'));
+    if (main || slugs.length === 1) return main || slugs[0];
+  }
+  return '';
+}
+/** A line's leading genders and the words after them, with the brand, "all" and "all styles" set aside. */
+function listingParts(text, brandWords) {
+  let words = listingWords(text);
+  if (words[0] === 'all') words = words.slice(1);
+  if (brandWords.length && brandWords.every((w, i) => words[i] === w)) words = words.slice(brandWords.length);
+  if (words[0] === 'all') words = words.slice(1);
+  const genders = [];
+  for (;;) {
+    const at = genders.length && LISTING_JOINS.has(words[0]) ? 1 : 0;
+    const gender = LISTING_GENDERS[words[at]];
+    if (!gender) break;
+    genders.push(...gender.split('|'));
+    words = words.slice(at + 1);
+  }
+  if (words[words.length - 1] === 'styles') words = words.slice(0, words[words.length - 2] === 'all' ? -2 : -1);
+  return { genders, words };
+}
+/** The category and gender a whole-range brand listing narrows to; null keeps the whole brand. */
+function listingFilters(descs, label, brand) {
+  const brandWords = listingWords(brand);
+  const lines = descs.map((desc) => listingParts(desc, brandWords));
+  // A line naming anything but one category ("Gloves and Mitts") could cover the brand's other products.
+  const named = lines.filter((line) => line.words.length).map((line) => categoryNamed(line.words));
+  if (named.some((category) => !category) || new Set(named).size > 1) return null;
+  const own = listingParts(label, brandWords);
+  const category = named[0] || (own.words.length ? categoryNamed(own.words) : '');
+  if (!category) return null;
+  // A line without a gender covers every gender; the box's name only speaks when no line names one.
+  const genders = lines.every((line) => line.genders.length)
+    ? lines.flatMap((line) => line.genders)
+    : lines.some((line) => line.genders.length) ? [] : own.genders;
+  return { category, gender: [...new Set(genders)].join('|') };
+}
+
+/**
+ * Whether an item-list line covers a whole range rather than particular products: "All" in its Style or
+ * Brand column, or an AS400 whole-range item. "ALL" in the SKU column only means every size and colour of
+ * the styles listed.
+ */
+const coversRange = (o) => !!o?.allStyles && (o.ad != null || /^all$/i.test(o.brand || '') || (o.styles || []).some((st) => /^all\b/i.test(String(st).trim())));
+let rangeLines = { offers: null, ids: new Set() };
+/** Whether every item-list line a box is linked to covers a whole range, so the box links to a listing on purpose. */
+function linksRange(h) {
+  if (!h.offerIds?.length) return false;
+  if (rangeLines.offers !== state.offers) rangeLines = { offers: state.offers, ids: new Set(state.offers.filter(coversRange).map((o) => o.id)) };
+  return h.offerIds.every((id) => rangeLines.ids.has(id));
+}
+
 // Turns Claude's answer into a hotspot, taking SKUs, in-store flags and the fallback link from the
 // matched item-list offers: whole-brand or category offers fall back to the brand page, others to a
 // search for the sheet's brand and description.
@@ -1810,17 +1906,26 @@ function fromOffers(offers, label, printedBrand) {
   const sheetBrand = offers.map((o) => o.brand).find((b) => b && !/^all$/i.test(b)) || '';
   // Sheets sometimes cut brand names short ("SILENCER" for SilencerCo); prefer the printed one then.
   const brand = sheetBrand && printedBrand.toLowerCase().startsWith(sheetBrand.toLowerCase()) ? printedBrand : sheetBrand || printedBrand;
-  const skus = [...new Set(offers.flatMap((o) => o.skus))].slice(0, 60);
+  // The styles and SKUs a whole-range line lists are examples of its range, not products for the box.
+  const picked = offers.filter((o) => !coversRange(o));
+  const skus = [...new Set(picked.flatMap((o) => o.skus))].slice(0, 60);
   const issues = offers.flatMap((o) => o.issues || []);
   const wholeRange = offers.length > 0 && offers.every((o) => o.allStyles || !o.skus.length);
   const product = offers.find((o) => o.desc)?.desc || label.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '');
+  const listing = wholeRange && brand ? listingFilters(offers.map((o) => o.desc), label, brand) : null;
   const fallback = wholeRange && brand
-    ? { attributes: [{ attributeName: 'brand', attributeValue: brand }] }
+    ? {
+        ...(listing ? { category: listing.category } : {}),
+        attributes: [
+          { attributeName: 'brand', attributeValue: brand },
+          ...(listing?.gender ? [{ attributeName: 'gender', attributeValue: listing.gender }] : []),
+        ],
+      }
     : { searchTerm: [brand, product.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '')].filter(Boolean).join(' ') || label };
   // Items listed without SKUs can still be found by their Scheels Search id, vendor number + style
   // (21452-LEGACY-KB); colour-coded styles (XT-BB) also try their base style (21452-XT). The importer
   // confirms these and fills in the real SKUs.
-  const styleIds = skus.length ? [] : [...new Set(offers.flatMap((o) => {
+  const styleIds = skus.length ? [] : [...new Set(picked.flatMap((o) => {
     const vendorNo = String(o.vendorNo || '').trim();
     if (!/^\d+$/.test(vendorNo)) return [];
     return (o.styles || []).filter((st) => /^[A-Za-z0-9][\w.-]*$/.test(st)).flatMap((st) => {
@@ -1828,7 +1933,7 @@ function fromOffers(offers, label, printedBrand) {
       return [`${vendorNo}-${st}`, ...(base ? [`${vendorNo}-${base}`] : [])];
     });
   }))].slice(0, 20);
-  const beans = [...new Set(offers.flatMap((o) => o.beans || []))].slice(0, 40);
+  const beans = [...new Set(picked.flatMap((o) => o.beans || []))].slice(0, 40);
   return { brand, skus, beans, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
 }
 
@@ -2108,7 +2213,7 @@ function matchPageFromList(i) {
   const p = state.pages[i];
   let linked = 0;
   for (const h of p.hotspots) {
-    if (h.skus?.length || h.objectIds?.length || h.beans?.length || h.inStoreOnly) continue;
+    if (h.offerIds?.length || h.skus?.length || h.objectIds?.length || h.beans?.length || h.inStoreOnly) continue;
     const best = clearMatch(suggestEntries(h, i + 1, 2));
     if (best) {
       linkToEntries(h, [best.id]);
@@ -2288,8 +2393,10 @@ function problemsFor(h, items) {
   return out;
 }
 
-/** A box with nothing to link to a product: no SKU or product id, and not in store only. */
-const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly;
+/** A box with nothing to link to a product: no SKU or product id, not in store only, and not a whole-range box. */
+const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly && !linksRange(h);
+/** A whole-range box with no product of its own: it links to its listing, and the importer leaves it that way. */
+const rangeOnly = (h) => linksRange(h) && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly;
 /** Claude marked it to check, or it has no product yet (the importer then has to find one by name). */
 const lowConfidence = (h) => h.confidence === 'low' || noProduct(h);
 
@@ -2415,8 +2522,6 @@ function renderInspectorBody() {
   price.addEventListener('change', () => edit((x) => { x.priceText = price.value.trim(); }));
   const description = el('textarea', { value: h.description || '', id: 'iDescription', rows: 2, maxLength: 300, placeholder: 'Offer terms the price leaves out, e.g. Excludes Sitka and First Lite.' });
   description.addEventListener('change', () => edit((x) => { x.description = description.value.trim(); }));
-  const skus = el('input', { type: 'text', value: h.skus.join(', '), id: 'iSkus', className: 'mono' });
-  skus.addEventListener('change', () => edit((x) => { x.skus = skus.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); x.skusEdited = x.skus.length > 0; }));
   const beans = el('input', { type: 'text', value: (h.beans || []).join(', '), id: 'iBeans', className: 'mono', placeholder: 'e.g. 1005-HV8154' });
   beans.addEventListener('change', () => edit((x) => { x.beans = beans.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean); x.beansEdited = x.beans.length > 0; }));
   const conf = el('select', { id: 'iConf' }, el('option', { value: 'high', textContent: 'High', selected: h.confidence === 'high' }), el('option', { value: 'low', textContent: 'Check', selected: h.confidence === 'low' }));
@@ -2466,13 +2571,16 @@ function renderInspectorBody() {
   if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
-  if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No SKU yet, so this box is marked to check. Add SKUs${mcp ? ' (Find in AS400 below, ' : ' ('}the item list, or by hand), or tick Reviewed to let the importer find the product by its name and price.` }));
+  if (rangeOnly(h)) body.append(el('div', { className: 'note', textContent: 'Its item-list line covers a whole range, so it links to the listing below, not a product. Type a bean above to show one product instead.' }));
+  if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No product yet, so this box is marked to check. Link one (${mcp ? 'Find in AS400 below, ' : ''}the item list, or a bean typed above), or tick Reviewed to let the importer find the product by its name and price.` }));
   body.append(
-    field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('SKUs (comma separated)', skus), field('Beans (comma separated)', beans),
+    field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('Beans (comma separated)', beans),
+    // SKUs come from the item list or the AS400 when no bean is found; shown, not edited.
+    ...(h.skus.length ? [el('div', { className: 'note mono', textContent: `SKUs: ${h.skus.join(', ')}` })] : []),
     el('label', { className: 'check' }, inStore, ' In store only (no online link)'),
     ...suggestionBlock(),
     ...lookupBlock(h, edit),
-    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${makerOf(o)} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.beans?.length ? '. The site finds the product by its bean; add SKUs only to point at particular colours or sizes.' : !h.skus.length && h.objectIds?.length ? `. No SKU in the item list; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
+    ...(sheetItems.length ? [el('div', { className: 'note', textContent: `Item list: ${sheetItems.map((o) => `${makerOf(o)} ${o.desc} (${o.skus.length} SKU${o.skus.length === 1 ? '' : 's'})`).join('; ')}${!h.skus.length && h.beans?.length ? '. The site finds the product by its bean.' : !h.skus.length && h.objectIds?.length ? `. No SKU in the item list; the importer looks it up by style (${h.objectIds.slice(0, 3).join(', ')}).` : ''}` })] : []),
     ...linkFields(h, edit),
     field('Confidence', conf),
     el('div', { className: 'mono', textContent: `x ${h.box.x}  y ${h.box.y}  w ${h.box.w}  h ${h.box.h}` }),
@@ -2874,7 +2982,7 @@ function flyerData() {
       imageName: imageName(d.campaign, p, i), ...(p.replaces ? { replaces: p.replaces } : {}),
       hotspots: p.hotspots.map((h) => ({
         label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
-        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.beans?.length ? h.beans : h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
+        box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.beans?.length ? h.beans : h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), ...(rangeOnly(h) ? { wholeRange: true } : {}), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
       })),
     })),
   };
@@ -3325,17 +3433,22 @@ const shared = {
   synced: new Map(),   // write key → JSON of what the store holds, as far as this view knows
   queue: new Map(),    // write key → its write chain, while a write is queued or running
   running: 0, waiting: [],
+  retryTimer: 0, retryDelay: 0,  // the pending retry of failed writes, and its pause
+  reconnecting: 0,               // live listeners waiting to be reopened
+  relinked: false,               // the open flyer's boxes have been linked to its item list once
 };
 const SHARED_KEY = 'flyer-studio:shared';
 const MAX_WRITES = 6;            // writes in flight at once; more are queued
+const RETRY_MS = 5000;           // first pause before failed writes or a dropped listener are tried again
+const RETRY_MAX_MS = 60000;      // the longest pause, as failures repeat
 const CLAIM_MS = 60000;          // a page claim, renewed every half of it while Claude works on the page
 const OFFER_CHUNK_BYTES = 180000; // under the store's 256 KiB per document
 const SYNC_ERRORS = {
   invalid_argument: 'you can view this flyer but not change it',
-  resource_exhausted: 'too many changes at once; they will be saved with your next change',
+  resource_exhausted: 'too many changes at once; trying again shortly',
   quota_exceeded: 'the shared flyers are full. Delete flyers you no longer need',
   revoked: 'your access to this flyer changed. Reload the page',
-  unavailable: 'the connection dropped; they will be saved with your next change',
+  unavailable: 'the connection dropped; trying again shortly',
 };
 const newId = (prefix) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const pageId = (n) => `p${String(n).padStart(3, '0')}`;
@@ -3368,17 +3481,23 @@ function limited(task) {
 }
 
 /**
+ * JSON with every object's keys sorted. The store hands documents back with their fields in sorted
+ * order, whatever order they were written in, so what this view holds is compared in this form.
+ */
+const canonical = (value) => JSON.stringify(value, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
+
+/**
  * Writes `data` to `path` (null deletes it; `merge` updates the fields given) unless the store already
  * holds it. Writes under one key run one after another.
  */
 function write(key, path, data, merge = false) {
-  const json = data === null ? null : JSON.stringify(data);
+  const json = data === null ? null : canonical(data);
   if (shared.synced.get(key) === json) return;
   shared.synced.set(key, json);
   const ref = shared.db.doc(path);
   const chain = (shared.queue.get(key) || Promise.resolve())
     .then(() => limited(() => (data === null ? ref.delete() : merge ? ref.update(data) : ref.set(data))))
-    .then(() => { shared.error = ''; })
+    .then(() => { shared.error = ''; shared.retryDelay = 0; })
     .catch((e) => syncFailed(e, key))
     .finally(() => { if (shared.queue.get(key) === chain) shared.queue.delete(key); updateSyncState(); });
   shared.queue.set(key, chain);
@@ -3386,15 +3505,50 @@ function write(key, path, data, merge = false) {
 }
 
 function syncFailed(e, key) {
-  shared.synced.delete(key); // written again with the next change
+  // Matches nothing, so the next sync writes it again (a failed delete included).
+  shared.synced.set(key, undefined);
   shared.error = SYNC_ERRORS[e?.code] || SYNC_ERRORS.unavailable;
-  if (e?.code === 'invalid_argument' && shared.canWrite !== true) { shared.readOnly = true; updateButtons(); renderStage(); }
+  if (e?.code === 'invalid_argument') {
+    if (shared.canWrite !== true) { shared.readOnly = true; updateButtons(); renderStage(); }
+    return;
+  }
+  // A busy spell or a dropped connection passes: try again on a growing pause, rather than waiting for
+  // this person's next change, which may never come.
+  if (shared.retryTimer) return;
+  shared.retryDelay = Math.min(RETRY_MAX_MS, shared.retryDelay ? shared.retryDelay * 2 : RETRY_MS);
+  shared.retryTimer = setTimeout(() => { shared.retryTimer = 0; syncShared(); }, shared.retryDelay * (0.75 + Math.random() / 2));
+}
+
+/**
+ * Subscribes with `listen(next, error)` and keeps the subscription alive. A listener ends at its first
+ * error, and after a dropped connection or a busy spell only a fresh one recovers, so it is reopened after
+ * a growing pause; a withdrawn grant or a refused query stays closed. Returns the stop function.
+ */
+function keepListening(listen, next) {
+  const flyer = shared.flyerId;
+  let stop = () => {}, closed = false, attempt = 0, timer = 0, dropped = false;
+  const start = () => {
+    stop = listen((snap) => {
+      attempt = 0;
+      if (dropped) { dropped = false; shared.reconnecting--; updateSyncState(); }
+      next(snap);
+    }, (e) => {
+      if (closed || shared.flyerId !== flyer) return;
+      if (e?.code === 'revoked' || e?.code === 'invalid_argument') { shared.error = SYNC_ERRORS[e.code]; updateSyncState(); return; }
+      if (!dropped) { dropped = true; shared.reconnecting++; updateSyncState(); }
+      timer = setTimeout(start, Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** attempt++));
+    });
+  };
+  start();
+  return () => { closed = true; clearTimeout(timer); stop(); if (dropped) shared.reconnecting--; };
 }
 
 function updateSyncState() {
   const node = $('syncState');
   node.classList.toggle('err', !!shared.error);
-  node.textContent = !shared.flyerId ? '' : shared.error ? `Changes not saved: ${shared.error}.` : readOnly() ? 'View only' : shared.queue.size ? 'Saving…' : 'All changes saved';
+  node.textContent = !shared.flyerId ? '' : shared.error ? `Changes not saved: ${shared.error}.`
+    : shared.reconnecting ? 'Reconnecting; others’ changes will show again shortly…'
+    : readOnly() ? 'View only' : shared.queue.size ? 'Saving…' : 'All changes saved';
 }
 
 /** Writes what changed on this flyer since the store last had it: details, page status, hotspots. */
@@ -3502,7 +3656,7 @@ function applyFlyer(snap) {
   if (updatingBy() && !wasUpdating) setStatus(`${shared.names.get(updatingBy()) || 'Someone'} is updating this flyer from a revised PDF. It is view-only until they finish.`);
   if (wasUpdating && !updatingBy()) setStatus('The flyer was updated from a revised PDF.');
   const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '', firstPage: data.firstPage || '', spreadsFrom: data.spreadsFrom || '' };
-  shared.synced.set(`${flyerPath()}#details`, JSON.stringify(details));
+  shared.synced.set(`${flyerPath()}#details`, canonical(details));
   if (!DETAIL_FIELDS.includes(document.activeElement?.id)) writeDetails(details);
   $('pdfName').textContent = `Shared · ${data.title || data.pdfName || 'flyer'} · ${data.pageCount || 0} pages`;
   if (state.offers.length && data.itemList?.name && sheet.name !== data.itemList.name) {
@@ -3529,7 +3683,7 @@ function applyPages(snap) {
     p.generatingSince = Number(data.generatingSince) || 0;
     const key = `${flyerPath('pages', pageId(n))}#status`;
     if (!shared.queue.has(key)) {
-      shared.synced.set(key, JSON.stringify({ status: data.status || 'empty', error: data.error || '' }));
+      shared.synced.set(key, canonical({ status: data.status || 'empty', error: data.error || '' }));
       // A page left "generating" by someone whose claim lapsed (a closed tab) is not being generated.
       const stale = data.status === 'working' && !(p.generatingSince + CLAIM_MS * 2 > Date.now());
       p.status = stale ? 'empty' : data.status || 'empty';
@@ -3560,10 +3714,10 @@ function applyHotspots(docs, render = true) {
       const own = mine.get(id);
       if (shared.queue.has(key)) { if (own) next.push([data.order, own]); continue; } // our write is on its way
       const { page, order, ...fields } = data;
-      shared.synced.set(key, JSON.stringify(data));
+      shared.synced.set(key, canonical(data));
       if (own) {
         const { id: _, ...current } = own;
-        if (JSON.stringify(current) !== JSON.stringify(fields)) { for (const k of Object.keys(own)) if (k !== 'id') delete own[k]; Object.assign(own, structuredClone(fields)); }
+        if (canonical(current) !== canonical(fields)) { for (const k of Object.keys(own)) if (k !== 'id') delete own[k]; Object.assign(own, structuredClone(fields)); }
         next.push([order, own]);
       } else next.push([order, { id, ...structuredClone(fields) }]);
     }
@@ -3577,6 +3731,8 @@ function applyHotspots(docs, render = true) {
   }
   state.selected = selectedId ? currentPage().hotspots.findIndex((h) => h.id === selectedId) : -1;
   if (state.multi.size) state.multi = new Set([...state.multi].filter((i) => i < currentPage().hotspots.length));
+  // The item list may have arrived before the boxes did: link them to it once they are here.
+  if (!shared.relinked && state.offers.length) { shared.relinked = true; if (relinkHotspots()) persist(); }
   if (render) refresh();
 }
 
@@ -3598,7 +3754,8 @@ function renderAll() { renderRail(); renderStage(); updateButtons(); renderPeopl
 function closeShared() {
   if (!shared.flyerId) return;
   shared.unsubscribe.forEach((stop) => stop());
-  Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false });
+  clearTimeout(shared.retryTimer);
+  Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false, retryTimer: 0, retryDelay: 0, reconnecting: 0, relinked: false });
   shared.synced.clear();
   try { localStorage.removeItem(SHARED_KEY); } catch {}
   setPresence();
@@ -3616,12 +3773,11 @@ async function openSharedFlyer(id) {
   writeDetails({});
   $('exampleBanner').hidden = true;
   showItemList();
-  const failed = (e) => { shared.error = SYNC_ERRORS[e?.code] || SYNC_ERRORS.unavailable; updateSyncState(); };
   shared.unsubscribe.push(
-    shared.db.doc(flyerPath()).onSnapshot(applyFlyer, failed),
-    shared.db.collection(flyerPath('pages')).orderBy('n').onSnapshot(applyPages, failed),
-    shared.db.collection(flyerPath('hotspots')).onSnapshot((snap) => applyHotspots(snap.docs), failed),
-    shared.db.collection(flyerPath('offers')).orderBy('n').onSnapshot(applyOffers, failed),
+    keepListening((next, error) => shared.db.doc(flyerPath()).onSnapshot(next, error), applyFlyer),
+    keepListening((next, error) => shared.db.collection(flyerPath('pages')).orderBy('n').onSnapshot(next, error), applyPages),
+    keepListening((next, error) => shared.db.collection(flyerPath('hotspots')).onSnapshot(next, error), (snap) => applyHotspots(snap.docs)),
+    keepListening((next, error) => shared.db.collection(flyerPath('offers')).orderBy('n').onSnapshot(next, error), applyOffers),
   );
   setPresence();
   renderAll();

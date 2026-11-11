@@ -24,6 +24,8 @@ export interface Hotspot {
   fallback: FallbackLink;
   locked: boolean;
   confidence: 'high' | 'low';
+  /** Set by Flyer Studio on a box for a whole range, which links to its listing. Used by the import, never saved. */
+  wholeRange?: boolean;
 }
 
 export interface StudioPage {
@@ -80,6 +82,7 @@ function cleanHotspot(raw: any): Hotspot {
     fallback: toFallbackLink(raw?.fallback, text(raw?.label)),
     locked: raw?.locked === true,
     confidence: raw?.confidence === 'high' ? 'high' : 'low',
+    ...(raw?.wholeRange === true ? { wholeRange: true } : {}),
   };
 }
 
@@ -152,5 +155,14 @@ export async function findImage(name: string, media: MediaSettings): Promise<Ima
 }
 
 /** Pages whose image is not published yet go in without one; the site skips them until a re-import adds it. */
+/** A hotspot as the Digital Flyer item stores it, without what only the import uses. */
+export function savedHotspot(hotspot: Hotspot): Hotspot {
+  const { wholeRange: _importOnly, ...saved } = hotspot;
+  return saved;
+}
+
 export const buildPages = (flyer: StudioFlyer, images: (ImageLink | null)[]): FlyerPage[] =>
-  flyer.pages.map((page, i) => (images[i] ? { image: images[i]!, hotspots: page.hotspots } : { hotspots: page.hotspots }));
+  flyer.pages.map((page, i) => {
+    const hotspots = page.hotspots.map(savedHotspot);
+    return images[i] ? { image: images[i]!, hotspots } : { hotspots };
+  });
