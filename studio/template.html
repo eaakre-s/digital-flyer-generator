@@ -448,7 +448,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       </li>
       <li>
         <h3>Check every page</h3>
-        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag any corner to resize it, click its <b>×</b> (or press Delete) to remove it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A line marked All whose sheet rows also list particular products (a "Golf Clothing, all styles" line listing the Highlands quarter-zip) links a box that names one of those products to just that product. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
+        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. One flag stays even then: a box whose typed beans leave out a bean its item-list lines have (a second product found later, or a bean deleted by mistake). <b>Add it</b>, or <b>Leave out</b> when the box shows only some of the line's products. Click a box to select it, drag to move it, drag any corner to resize it, click its <b>×</b> (or press Delete) to remove it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A line marked All whose sheet rows also list particular products (a "Golf Clothing, all styles" line listing the Highlands quarter-zip) links a box that names one of those products to just that product. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
       </li>
       <li>
         <h3>Save the files</h3>
@@ -2491,8 +2491,24 @@ const rangeOnly = (h) => linksRange(h) && !h.skus?.length && !h.objectIds?.lengt
 /** Claude marked it to check, or it has no product yet (the importer then has to find one by name). */
 const lowConfidence = (h) => h.confidence === 'low' || noProduct(h);
 
-/** A box still to look at: low confidence or a failed check, unless a person marked it reviewed. */
-const needsCheck = (h, items) => !h.reviewed && (lowConfidence(h) || problemsFor(h, items).length > 0);
+let listIndex = { offers: null, index: new Map() };
+/**
+ * Beans the item list has for a box's lines that the beans someone typed into it leave out, apart from those
+ * they chose to leave out. Typed beans are never updated from the item list, so a bean found for one of its
+ * products later, or typed and then deleted, would otherwise be missing from the box without anyone noticing.
+ */
+function missingBeans(h) {
+  if (!h.beansEdited || !h.offerIds?.length) return [];
+  if (listIndex.offers !== state.offers) listIndex = { offers: state.offers, index: offerIndex(state.offers) };
+  const have = new Set([...(h.beans || []), ...(h.leftOutBeans || [])]);
+  const listed = h.offerIds.map((id) => listIndex.index.get(id)).filter((o) => o && !coversRange(o)).flatMap((o) => o.beans || []);
+  return [...new Set(listed)].filter((b) => !have.has(b));
+}
+
+/** A box still to look at: low confidence or a failed check, unless a person marked it reviewed; or missing a bean, reviewed or not. */
+const needsCheck = (h, items) => missingBeans(h).length > 0 || (!h.reviewed && (lowConfidence(h) || problemsFor(h, items).length > 0));
+/** Shown as "Check this one": low confidence and not reviewed, or missing a bean. */
+const toCheck = (h) => (lowConfidence(h) && !h.reviewed) || missingBeans(h).length > 0;
 
 // ---------- rendering ----------
 function pageSummary(p) {
@@ -2538,11 +2554,11 @@ function renderStage() {
   $('pageError').textContent = p.status === 'error' && p.error ? `This page failed to generate: ${p.error}` : '';
   p.hotspots.forEach((h, idx) => {
     const problems = problemsFor(h, p.items);
-    const box = el('div', { className: `hs${lowConfidence(h) && !h.reviewed ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
+    const box = el('div', { className: `hs${toCheck(h) ? ' low' : ''}${problems.length ? ' problem' : ''}${h.locked ? ' locked' : ''}`, tabIndex: 0 });
     box.setAttribute('role', 'button');
     box.setAttribute('aria-pressed', String(idx === state.selected || state.multi.has(idx)));
     if (state.multi.has(idx)) box.classList.add('multi');
-    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : lowConfidence(h) && !h.reviewed ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
+    box.setAttribute('aria-label', `Hotspot ${idx + 1}: ${h.label || 'unnamed'}${problems.length ? ', has problems' : toCheck(h) ? ', check this one' : h.reviewed ? ', reviewed' : ''}`);
     Object.assign(box.style, { left: `${h.box.x}%`, top: `${h.box.y}%`, width: `${h.box.w}%`, height: `${h.box.h}%` });
     box.append(el('span', { className: 'n', textContent: String(idx + 1) }), ...['nw', 'ne', 'sw', 'se'].map((corner) => el('span', { className: `grip ${corner}`, ariaHidden: 'true' })));
     box.dataset.idx = String(idx);
@@ -2670,6 +2686,18 @@ function renderInspectorBody() {
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
   if (rangeOnly(h)) body.append(el('div', { className: 'note', textContent: 'Its item-list line covers a whole range, so it links to the listing below, not a product. Type a bean above to show one product instead.' }));
   if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No product yet, so this box is marked to check. Link one (${mcp ? 'Find in AS400 below, ' : ''}the item list, or a bean typed above), or tick Reviewed to let the importer find the product by its name and price.` }));
+  const missing = missingBeans(h);
+  if (missing.length) {
+    const add = el('button', { className: 'linkbtn', type: 'button', textContent: missing.length === 1 ? 'Add it' : 'Add them' });
+    add.addEventListener('click', () => edit((x) => { x.beans = [...new Set([...(x.beans || []), ...missing])]; x.beansEdited = true; }));
+    const leave = el('button', { className: 'linkbtn', type: 'button', textContent: 'Leave out' });
+    leave.addEventListener('click', () => edit((x) => { x.leftOutBeans = [...new Set([...(x.leftOutBeans || []), ...missing])]; }));
+    add.setAttribute('aria-label', `Add ${missing.join(', ')} to the beans`);
+    leave.setAttribute('aria-label', `Leave ${missing.join(', ')} out of this box`);
+    body.append(el('div', { className: 'note' },
+      `Its item-list ${h.offerIds.length === 1 ? 'line has' : 'lines have'} ${missing.length === 1 ? 'a bean' : 'beans'} its typed beans leave out: ${missing.join(', ')}. It stays marked to check, even when Reviewed, until you add ${missing.length === 1 ? 'it or leave it' : 'them or leave them'} out. `,
+      add, ' · ', leave));
+  }
   body.append(
     field('Product', label), field('Price as printed', price), field('Description (optional)', description), field('Beans (comma separated)', beans),
     // SKUs come from the item list or the AS400 when no bean is found; shown, not edited.
@@ -3697,7 +3725,7 @@ const LOG_FIELDS = [
   ['label', 'Product', clip], ['priceText', 'Price', clip], ['description', 'Description', clip], ['buttonText', 'Button text', clip],
   ['box', 'Position', (b) => (b ? `${round(b.x)}, ${round(b.y)} · ${round(b.w)} × ${round(b.h)}` : '')],
   ['page', 'Page', (n) => (Number.isInteger(n) ? pageLabel(n) : '')],
-  ['beans', 'Beans', listText], ['skus', 'SKUs', listText], ['objectIds', 'Product ids', listText],
+  ['beans', 'Beans', listText], ['leftOutBeans', 'Beans left out', listText], ['skus', 'SKUs', listText], ['objectIds', 'Product ids', listText],
   ['offerIds', 'Item-list lines', offerText], ['fallback', 'Link', logLinkText], ['linkKind', 'Link type', clip],
   ['inStoreOnly', 'In store only', (v) => (v ? 'yes' : '')], ['reviewed', 'Reviewed', (v) => (v ? 'yes' : '')],
 ];
