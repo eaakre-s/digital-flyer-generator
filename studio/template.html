@@ -448,7 +448,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       </li>
       <li>
         <h3>Check every page</h3>
-        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag any corner to resize it, click its <b>×</b> (or press Delete) to remove it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
+        <p>Start with pages marked <span class="chip warn">to check</span> or <span class="chip bad">Failed</span>. When a flagged box is actually right, tick <b>Reviewed</b> in its panel to clear the flag. Click a box to select it, drag to move it, drag any corner to resize it, click its <b>×</b> (or press Delete) to remove it, or use <b>Draw box</b> to add one: a drawn box fills itself in from the text inside it (<b>Fill from this area</b> does the same for any box). Fix the product name and price on the right; under <b>Item list suggestions</b>, <b>Add</b> each sheet item the box advertises (several when one photo shows several products). <b>Match from item list</b> links every clear match on the page at once. A line marked All whose sheet rows also list particular products (a "Golf Clothing, all styles" line listing the Highlands quarter-zip) links a box that names one of those products to just that product. A box should cover the product's photo, name and price. Pages with no products, like articles or partner logos, should have no boxes. Anything you edit is kept if you generate the page again.</p>
       </li>
       <li>
         <h3>Save the files</h3>
@@ -715,8 +715,10 @@ function withStableIds(offers) {
 }
 
 /**
- * Re-points every hotspot's item-list links at the entries carrying its SKUs: repairs links saved before
- * ids were stable, or made against an earlier version of the sheet. Hotspots without SKUs keep links that still exist.
+ * Brings every hotspot's item-list links up to date with the item list. Links to entries that still exist
+ * stay; SKUs on a box that none of them carries link the entries that do, which repairs links saved before
+ * ids were stable or made against an earlier version of the sheet. A box that names products listed under
+ * a whole-range line is linked to those products (see namedProducts).
  */
 function relinkHotspots() {
   if (!state.offers.length || !state.pages.length) return 0;
@@ -731,14 +733,14 @@ function relinkHotspots() {
   for (const page of state.pages) {
     for (const h of page.hotspots) {
       const before = (h.offerIds || []).join(',');
-      const skus = (h.skus || []).map(normalizeSku);
-      const ids = skus.length
-        ? [...new Set(skus.map((sku) => bySku.get(sku)).filter(Boolean))]
-        : (h.offerIds || []).filter((id) => index.has(id));
+      const linked = (h.offerIds || []).filter((id) => index.has(id));
+      const carried = new Set(linked.flatMap((id) => index.get(id).skus || []));
+      const found = (h.skus || []).map(normalizeSku).filter((sku) => !carried.has(sku)).map((sku) => bySku.get(sku)).filter(Boolean);
+      const ids = withNamedProducts([...new Set([...linked, ...found])], h.label || '', index);
       h.offerIds = ids;
+      const skus = (h.skus || []).map(normalizeSku);
       const derived = ids.length ? fromOffers(ids.map((id) => index.get(id)), h.label || '', h.brand || '') : null;
-      // Beans found after a box was linked reach it here, unless someone typed the box's own; the SKUs
-      // the item list filled in then go, while SKUs someone typed stay.
+      // Beans found after a box was linked reach it here, unless someone typed the box's own.
       if (derived?.beans.length && !h.beansEdited && derived.beans.join(',') !== (h.beans || []).join(',')) { h.beans = derived.beans; changed++; }
       // Products a whole-range line lists leave its boxes, unless someone typed them.
       const ranges = ids.map((id) => index.get(id)).filter(coversRange);
@@ -750,8 +752,12 @@ function relinkHotspots() {
         const kept = skus.filter((sku) => !rangeSkus.has(sku) || derived.skus.includes(sku));
         if (!h.skusEdited && kept.length < skus.length) { h.skus = kept; changed++; }
       }
-      const filledIn = skus.length > 0 && skus.length === derived?.skus.length && skus.every((sku) => derived.skus.includes(sku));
-      if (filledIn && h.beans?.length && !h.skusEdited) { h.skus = []; changed++; }
+      // The item list's SKUs follow the box's beans (see listSkus). SKUs from anywhere else (the AS400, Amplience) stay.
+      const current = (h.skus || []).map(normalizeSku);
+      if (derived && !h.skusEdited && current.every((sku) => derived.skus.includes(sku))) {
+        const wanted = listSkus(h, derived);
+        if (wanted.length !== current.length || wanted.some((sku) => !current.includes(sku))) { h.skus = wanted; changed++; }
+      }
       // A whole-brand listing nobody edited gains the category (and gender) its item-list lines name.
       const narrowed = derived?.fallback.category ? derived.fallback : null;
       const wholeBrand = narrowed && { attributes: narrowed.attributes.filter((a) => a.attributeName === 'brand') };
@@ -1130,21 +1136,40 @@ FROM ${BEAN_TABLE} p JOIN styles st ON p.vendor_number = st.vendor AND st.style 
 WHERE NOT p.is_ean AND IFNULL(p.pim_style_code, '') != ''`;
 }
 
-/** Beans by SKU and by "vendor|style", from BigQuery. */
+// The BigQuery connector returns at most this many rows, and a longer answer arrives cut to that length
+// with nothing saying so (no page token, no row count). A lookup is split so each query's answer is shorter.
+const BIGQUERY_ROW_LIMIT = 3000;
+// SKUs and styles per bean query: each finds about one bean, a few styles dozens, so 2,000 stay well under the limit.
+const BEAN_BATCH = 2000;
+
+/** Beans by SKU and by "vendor|style", from BigQuery, asked in batches whose answers come back whole. */
 async function lookUpBeanRows(skus, styles) {
-  if (!skus.length && !styles.length) return new Map();
+  const keys = [...skus.map((sku) => ({ sku })), ...styles.map((style) => ({ style }))];
+  const found = new Map();
+  for (let i = 0; i < keys.length; i += BEAN_BATCH) await lookUpBeanBatch(keys.slice(i, i + BEAN_BATCH), found);
+  return found;
+}
+
+/** Adds one batch's beans to `found`; an answer that fills the connector's limit may be cut, so the batch is asked again in halves. */
+async function lookUpBeanBatch(keys, found) {
+  const skus = keys.filter((k) => k.sku).map((k) => k.sku), styles = keys.filter((k) => k.style).map((k) => k.style);
   const { payload } = await mcp.callTool(BIGQUERY, 'execute_sql_readonly', { projectId: BEAN_PROJECT, query: beanQuery(skus, styles), timeoutMs: 60000 });
   if (!payload || typeof payload !== 'object') throw { code: 'tool_error', message: String(payload || '') };
   if (!payload.jobComplete) throw { code: 'not_finished' };
-  if (payload.pageToken) throw { code: 'truncated' };
+  const rows = payload.rows || [];
+  if (payload.pageToken || rows.length >= BIGQUERY_ROW_LIMIT) {
+    if (keys.length < 2) throw { code: 'truncated' };
+    const half = Math.ceil(keys.length / 2);
+    await lookUpBeanBatch(keys.slice(0, half), found);
+    await lookUpBeanBatch(keys.slice(half), found);
+    return;
+  }
   const names = (payload.schema?.fields || []).map((f) => f.name);
-  const found = new Map();
-  for (const row of payload.rows || []) {
+  for (const row of rows) {
     const r = Object.fromEntries(names.map((n, i) => [n, String(row.f?.[i]?.v ?? '')]));
     const key = r.kind === 'sku' ? r.ref : `${r.ref}|${r.style}`;
     if (r.bean) found.set(key, [...new Set([...(found.get(key) || []), r.bean])]);
   }
-  return found;
 }
 
 /** Each item-list product's bean, found from its SKUs, and from its vendor number with its styles and print styles. */
@@ -1923,6 +1948,36 @@ function linksRange(h) {
   return h.offerIds.every((id) => rangeLines.ids.has(id));
 }
 
+/**
+ * The products a whole-range line lists that a box names: a line "UNRL Golf Clothing, All except US Open"
+ * listing "TOP HIGHLANDS QZ-M/NBLU" under it, and a box printed "Highlands Long Sleeve Quarter-Zip". At
+ * least two of a product's own words must be printed in the box, covering at least half of its description
+ * by rarity; a box named after the range itself ("Warmies Plush") shares a word or so with its products and
+ * names none of them. Only grouped lines' products can be linked on their own.
+ */
+function namedProducts(o, label) {
+  if (!coversRange(o) || !(o.products?.length > 1)) return [];
+  const { weight } = matchEntries();
+  const brand = matchWords(o.brand || '');
+  const printed = matchWords(label).filter((w) => !brand.includes(w));
+  return o.products.filter((p) => {
+    if (!p.skus?.length) return false;
+    const own = [...new Set(matchWords(styleDesc(p.desc)))].filter((w) => !brand.includes(w));
+    const hits = own.filter((w) => printed.some((x) => sameWord(x, w)));
+    const total = own.reduce((n, w) => n + (weight.get(w) || 0), 0);
+    const covered = hits.reduce((n, w) => n + (weight.get(w) || 0), 0);
+    return hits.length >= 2 && total > 0 && covered / total >= AUTO_MATCH_COVERAGE_ALONE;
+  });
+}
+
+/** Item-list ids with each whole-range line a box names products of (see namedProducts) replaced by those products. */
+function withNamedProducts(ids, label, index) {
+  return [...new Set(ids.flatMap((id) => {
+    const named = namedProducts(index.get(id), label).filter((p) => index.has(p.id));
+    return named.length ? named.map((p) => p.id) : [id];
+  }))];
+}
+
 // Turns Claude's answer into a hotspot, taking SKUs, in-store flags and the fallback link from the
 // matched item-list offers: whole-brand or category offers fall back to the brand page, others to a
 // search for the sheet's brand and description.
@@ -1936,7 +1991,7 @@ function fromOffers(offers, label, printedBrand) {
   const skus = [...new Set(picked.flatMap((o) => o.skus))].slice(0, 60);
   const issues = offers.flatMap((o) => o.issues || []);
   const wholeRange = offers.length > 0 && offers.every((o) => o.allStyles || !o.skus.length);
-  const product = offers.find((o) => o.desc)?.desc || label.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '');
+  const product = styleDesc(offers.find((o) => o.desc)?.desc) || label.replace(new RegExp(`^${escapeRe(brand)}\\s*`, 'i'), '');
   const listing = wholeRange && brand ? listingFilters(offers.map((o) => o.desc), label, brand) : null;
   const fallback = wholeRange && brand
     ? {
@@ -1959,8 +2014,18 @@ function fromOffers(offers, label, printedBrand) {
     });
   }))].slice(0, 20);
   const beans = [...new Set(picked.flatMap((o) => o.beans || []))].slice(0, 40);
-  return { brand, skus, beans, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
+  // The SKUs of products no bean was found for, product by product within a grouped line: the site can only find those by SKU.
+  const parts = picked.flatMap((o) => (o.products?.length > 1 ? o.products.map((p) => ({ skus: p.skus || [], beans: p.beans ?? o.beans })) : [o]));
+  const looseSkus = [...new Set(parts.filter((p) => !p.beans?.length).flatMap((p) => p.skus || []))].slice(0, 60);
+  return { brand, skus, looseSkus, beans, styleIds, fallback, inStoreOnly: offers.some((o) => o.inStoreOnly), issues };
 }
+
+/**
+ * The item-list SKUs a linked box carries: all of its products' while the box has no bean, then only those
+ * of products the item list has no bean for (the site finds the rest by bean). Beans that came from anywhere
+ * else (typed, or found for the box's SKUs) stand for all of the box's products, so such a box carries none.
+ */
+const listSkus = (h, derived) => (!h.beans?.length ? derived.skus : h.beansEdited || !derived.beans.length ? [] : derived.looseSkus);
 
 /**
  * True when a price line prints a sale or offer (a sale price, % or $ off, a gift, a price beside the
@@ -2076,15 +2141,15 @@ function cleanHotspot(h, offersById) {
   const box = h?.box || {};
   const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
   const label = String(h?.label || '').trim();
-  const offerIds = Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [];
+  const offerIds = withNamedProducts(Array.isArray(h?.offerIds) ? h.offerIds.map(String).filter((id) => offersById.has(id)) : [], label, offersById);
   const entries = offerIds.map((id) => offersById.get(id));
-  const { brand, skus, beans, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
+  const { brand, skus, looseSkus, beans, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
   return {
     id: newId('h'), label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
-    offerIds, skus: beans.length ? [] : skus, beans, objectIds: styleIds, fallback, inStoreOnly,
+    offerIds, skus: beans.length ? looseSkus : skus, beans, objectIds: styleIds, fallback, inStoreOnly,
     confidence: h?.confidence === 'high' && !issues.length ? 'high' : 'low', note, locked: false,
   };
 }
@@ -2220,17 +2285,18 @@ function clearMatch([best, next]) {
 }
 
 /**
- * Links a hotspot to item-list entries, taking their beans (or, when none were found, their SKUs), the
- * in-store flag and (unless set by hand) the fallback link from them. A box with beans gets SKUs only
- * from a person, who adds them to point at particular colours or sizes.
+ * Links a hotspot to item-list entries, taking their beans and the SKUs of products without one (see
+ * listSkus), the in-store flag and (unless set by hand) the fallback link from them. A whole-range line
+ * the box names products of links those products instead (see namedProducts).
  */
 function linkToEntries(h, ids) {
   const index = offerIndex(state.offers);
-  const entries = ids.map((id) => index.get(id)).filter(Boolean);
+  const linked = withNamedProducts(ids.filter((id) => index.has(id)), h.label || '', index);
+  const entries = linked.map((id) => index.get(id));
   const derived = fromOffers(entries, h.label, h.brand || '');
-  const skus = !derived.beans.length ? derived.skus : h.skusEdited ? h.skus : [];
-  Object.assign(h, { offerIds: ids, skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
   if (!h.beansEdited) h.beans = derived.beans;
+  const skus = h.skusEdited && derived.beans.length ? h.skus : listSkus(h, derived);
+  Object.assign(h, { offerIds: linked, skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
   if (!h.linkEdited) h.fallback = derived.fallback;
 }
 

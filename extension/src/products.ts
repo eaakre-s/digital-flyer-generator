@@ -7,31 +7,36 @@ import { fillFromProducts, linkPath } from './link';
 export type Matches = Match[][];
 
 /**
- * Hotspots that already carry SKUs (from the item list) are confirmed by SKU. Items without SKUs arrive with
- * Scheels Search ids built from vendor number + style (from the item list, or typed into Studio's SKU field),
- * which are looked up directly. The rest are found by their printed name, except boxes Flyer Studio marks as
- * covering a whole range, which keep their link to the listing. In-store-only hotspots are left as they are.
+ * Hotspots that already carry products are confirmed: their SKUs (from the item list, for products it has no
+ * bean for) are searched, and their Scheels Search ids are looked up directly. Those ids are beans, or ids built
+ * from vendor number + style for items listed without SKUs. A box can carry both, one product by SKU and another
+ * by bean, and keeps every product either finds. The rest are found by their printed name, except boxes Flyer
+ * Studio marks as covering a whole range, which keep their link to the listing. In-store-only hotspots are left as they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
-  const bySku = hotspots.filter((h) => !h.inStoreOnly && h.skus.length);
-  const byStyle = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && h.objectIds?.length);
-  const wholeRange = (h: Hotspot) => !h.inStoreOnly && !!h.wholeRange && !h.skus.length && !h.objectIds?.length;
-  const byName = hotspots.filter((h) => !h.inStoreOnly && !h.skus.length && !h.objectIds?.length && !wholeRange(h));
-  const total = bySku.length + byStyle.length + byName.length;
+  const carries = (h: Hotspot) => h.skus.length > 0 || !!h.objectIds?.length;
+  const linked = hotspots.filter((h) => !h.inStoreOnly && carries(h));
+  const bySku = linked.filter((h) => h.skus.length);
+  const wholeRange = (h: Hotspot) => !h.inStoreOnly && !!h.wholeRange && !carries(h);
+  const byName = hotspots.filter((h) => !h.inStoreOnly && !carries(h) && !wholeRange(h));
+  const total = linked.length + byName.length;
   const skuResults = await findBySkus(bySku.map((h) => h.skus));
-  const styleProducts = await fetchProducts([...new Set(byStyle.flatMap((h) => h.objectIds ?? []))]);
-  const styleById = new Map(styleProducts.map((c) => [c.objectID, c]));
-  const styleResults = byStyle.map((h) => (h.objectIds ?? []).map((id) => styleById.get(id)).filter((c): c is Candidate => !!c));
-  onProgress(bySku.length + byStyle.length, total);
+  const idProducts = await fetchProducts([...new Set(linked.flatMap((h) => h.objectIds ?? []))]);
+  const byId = new Map(idProducts.map((c) => [c.objectID, c]));
+  const skuFound = new Map(bySku.map((h, i) => [h, skuResults[i] ?? []]));
+  onProgress(linked.length, total);
   const nameResults = await searchProducts(
     byName.map((h) => h.label),
-    (done) => onProgress(bySku.length + byStyle.length + done, total),
+    (done) => onProgress(linked.length + done, total),
   );
-  const skuMatch = new Map([
-    ...bySku.map((h, i): [typeof h, Candidate[]] => [h, skuResults[i] ?? []]),
-    ...byStyle.map((h, i): [typeof h, Candidate[]] => [h, styleResults[i] ?? []]),
-  ]);
+  // Each product once: as its SKUs found it (that names the colour), else as its id did.
+  const skuMatch = new Map(
+    linked.map((h): [Hotspot, Candidate[]] => {
+      const found = [...(skuFound.get(h) ?? []), ...(h.objectIds ?? []).map((id) => byId.get(id)).filter((c): c is Candidate => !!c)];
+      return [h, found.filter((c, i) => found.findIndex((x) => x.objectID === c.objectID) === i)];
+    }),
+  );
   const nameMatch = new Map(byName.map((h, i) => [h, nameResults[i] ?? []]));
   return flyer.pages.map((page) =>
     page.hotspots.map((h): Match => {
@@ -63,8 +68,8 @@ const savedFallback = (hotspot: Hotspot, match: Match, spellings?: BrandSpelling
 
 /**
  * The flyer with each hotspot's products applied as objectIDs (beans), and the fallback link filled in from
- * the products found, its brands spelled as `spellings` says. SKUs are left as they came: a box that has a
- * product gets SKUs only from a person, who adds them to point at particular colours or sizes.
+ * the products found, its brands spelled as `spellings` says. SKUs are left as they came: the item list's for
+ * products it has no bean for, or a person's, pointing at particular colours or sizes.
  */
 export function withChosenSkus(flyer: StudioFlyer, matches: Matches, spellings?: BrandSpellings): StudioFlyer {
   return {
