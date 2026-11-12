@@ -475,7 +475,7 @@ dialog.saving progress{width:100%;height:10px;margin-top:16px;accent-color:var(-
       </li>
     </ol>
     <h3 class="sub">Working on a flyer together</h3>
-    <p>Open the PDF, then <b>Shared flyers › Share the open flyer with your team</b>. Sharing uploads the pages, your boxes and the item list, and needs Editor access to Flyer Studio; teammates with Contributor access then open it from <b>Shared flyers</b>, without the PDF. Everyone sees the same boxes, and edits show up for the others as they are made (two people changing the same box: the last change wins). The page list shows who is on which page, and a page someone is generating is skipped by everyone else's Generate. The status beside the buttons says when everything is saved.</p>
+    <p>Open the PDF, then <b>Shared flyers › Share the open flyer with your team</b>. Sharing uploads the pages, your boxes and the item list, and needs Editor access to Flyer Studio; teammates with Contributor access then open it from <b>Shared flyers</b>, without the PDF. Everyone sees the same boxes, and edits show up for the others as they are made (two people changing the same box: the last change wins). The page list shows who is on which page, and a page someone is generating is skipped by everyone else's Generate. The status beside the buttons says when everything is saved. When Flyer Studio is updated, a window opened before the update turns view-only once someone opens the flyer in the new version; reload it to keep working.</p>
     <h3 class="sub">Who changed what</h3>
     <p>A shared flyer keeps an edit log: <b>History</b> beside the buttons lists each change, newest first, with who made it and the fields before and after, and <b>History of this box</b> in a box's panel shows just that box. <b>Shared flyers</b> has a History for every flyer, including deleted ones, with who deleted them. The log is kept until two weeks after the sale ends. Work done before a flyer is shared isn't logged.</p>
     <h3 class="sub">Fixing a live flyer</h3>
@@ -808,8 +808,8 @@ const colLetter = (i) => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : '') + St
 
 /** Re-links hotspots to the item list now in state.offers and shows it in the header. Returns its SKU count. */
 function showItemList() {
-  if (relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); renderStage(); renderRail(); }
-  if (shared.flyerId && !shared.applying && sheet.confirmed && (state.offers.length || shared.offerChunks)) publishOffers();
+  if (canWriteOwn() && relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); renderStage(); renderRail(); }
+  if (shared.flyerId && canWriteOwn() && !shared.applying && sheet.confirmed && (state.offers.length || shared.offerChunks)) publishOffers();
   const skuCount = state.offers.reduce((n, o) => n + o.skus.length, 0);
   $('sheetName').textContent = !sheet.name ? 'None' : sheet.confirmed ? `${sheet.name} · ${state.offers.length} items · ${skuCount} SKUs` : `${sheet.name} · columns to confirm`;
   $('sheetCols').hidden = sheet.source !== 'file' || !Object.keys(sheet.tabs).length;
@@ -1142,26 +1142,32 @@ const BIGQUERY_ROW_LIMIT = 3000;
 // SKUs and styles per bean query: each finds about one bean, a few styles dozens, so 2,000 stay well under the limit.
 const BEAN_BATCH = 2000;
 
-/** Beans by SKU and by "vendor|style", from BigQuery, asked in batches whose answers come back whole. */
-async function lookUpBeanRows(skus, styles) {
+/**
+ * Beans by SKU and by "vendor|style", from BigQuery, asked in batches whose answers come back whole. `stats`
+ * counts the queries, the rows they returned and any answer served from a cache rather than run.
+ */
+async function lookUpBeanRows(skus, styles, stats = { queries: 0, rows: 0, cached: 0 }) {
   const keys = [...skus.map((sku) => ({ sku })), ...styles.map((style) => ({ style }))];
   const found = new Map();
-  for (let i = 0; i < keys.length; i += BEAN_BATCH) await lookUpBeanBatch(keys.slice(i, i + BEAN_BATCH), found);
+  for (let i = 0; i < keys.length; i += BEAN_BATCH) await lookUpBeanBatch(keys.slice(i, i + BEAN_BATCH), found, stats);
   return found;
 }
 
 /** Adds one batch's beans to `found`; an answer that fills the connector's limit may be cut, so the batch is asked again in halves. */
-async function lookUpBeanBatch(keys, found) {
+async function lookUpBeanBatch(keys, found, stats) {
   const skus = keys.filter((k) => k.sku).map((k) => k.sku), styles = keys.filter((k) => k.style).map((k) => k.style);
-  const { payload } = await mcp.callTool(BIGQUERY, 'execute_sql_readonly', { projectId: BEAN_PROJECT, query: beanQuery(skus, styles), timeoutMs: 60000 });
+  // Never answered from the connector's call cache: every batch must be run against today's product table.
+  const { payload, cache } = await mcp.callTool(BIGQUERY, 'execute_sql_readonly', { projectId: BEAN_PROJECT, query: beanQuery(skus, styles), timeoutMs: 60000 }, { cache: false });
   if (!payload || typeof payload !== 'object') throw { code: 'tool_error', message: String(payload || '') };
   if (!payload.jobComplete) throw { code: 'not_finished' };
   const rows = payload.rows || [];
+  stats.queries++; stats.rows += rows.length; if (cache) stats.cached++;
+  console.info(`Bean lookup: ${keys.length} SKUs and styles, ${rows.length} rows${cache ? ', from the cache' : ''}.`);
   if (payload.pageToken || rows.length >= BIGQUERY_ROW_LIMIT) {
     if (keys.length < 2) throw { code: 'truncated' };
     const half = Math.ceil(keys.length / 2);
-    await lookUpBeanBatch(keys.slice(0, half), found);
-    await lookUpBeanBatch(keys.slice(half), found);
+    await lookUpBeanBatch(keys.slice(0, half), found, stats);
+    await lookUpBeanBatch(keys.slice(half), found, stats);
     return;
   }
   const names = (payload.schema?.fields || []).map((f) => f.name);
@@ -1183,7 +1189,8 @@ async function findBeans() {
   });
   const skus = [...new Set(sources.flatMap((x) => x.skus))].slice(0, MAX_BEAN_LOOKUPS);
   const styles = [...new Map(sources.flatMap((x) => x.styles).map((pair) => [pair.join('|'), pair])).values()].slice(0, MAX_BEAN_LOOKUPS);
-  const found = await lookUpBeanRows(skus, styles);
+  const stats = { queries: 0, rows: 0, cached: 0 };
+  const found = await lookUpBeanRows(skus, styles, stats);
   for (const x of sources) {
     x.entry.beans = [...new Set([...x.skus.flatMap((sku) => found.get(sku) || []), ...x.styles.flatMap((pair) => found.get(pair.join('|')) || [])])];
   }
@@ -1192,7 +1199,7 @@ async function findBeans() {
     else if (o.products?.length === 1) o.products[0].beans = o.beans;
   }
   const looked = sources.filter((x) => x.skus.length || x.styles.length);
-  return { found: looked.filter((x) => x.entry.beans.length).length, total: looked.length };
+  return { found: looked.filter((x) => x.entry.beans.length).length, total: looked.length, ...stats };
 }
 
 const BEAN_ERRORS = {
@@ -1222,9 +1229,10 @@ const beanError = (e) => {
 async function lookUpBeans() {
   if (!mcp || !state.offers.length) return '';
   try {
-    const { found, total } = await findBeans();
+    const { found, total, queries, rows, cached } = await findBeans();
     logAs('Found beans in BigQuery'); showItemList(); persist(); renderStage(); renderRail();
-    return total ? `Found beans for ${found} of ${total} products in ${BIGQUERY}.` : '';
+    const ran = `${queries} ${queries === 1 ? 'query' : 'queries'}, ${rows.toLocaleString()} rows${cached ? `, ${cached} answered from a cache` : ''}`;
+    return total ? `Found beans for ${found} of ${total} products in ${BIGQUERY} (${ran}).` : '';
   } catch (e) {
     return beanError(e);
   }
@@ -3575,10 +3583,15 @@ const shared = {
   retryTimer: 0, retryDelay: 0,  // the pending retry of failed writes, and its pause
   reconnecting: 0,               // live listeners waiting to be reopened
   relinked: false,               // the open flyer's boxes have been linked to its item list once
+  live: { flyer: false, hotspots: false, offers: false },  // each listener's latest answer came from the server, not this browser's cache
+  outdated: false,               // a newer Flyer Studio has opened the flyer since this page loaded
   logPending: [], logNext: '', logTimer: 0,         // edit-log changes noted since the last entry, and the action's name
   logDoc: null, logChain: Promise.resolve(), logOff: false,  // this person's current log document, its writes in order
 };
 const SHARED_KEY = 'flyer-studio:shared';
+// Raised with every change to what Flyer Studio writes on its own (relinking, the item list). A flyer records
+// the highest one that has opened it, and an older copy still open somewhere then stops writing to it.
+const STUDIO_VERSION = 45;
 const MAX_WRITES = 6;            // writes in flight at once; more are queued
 const RETRY_MS = 5000;           // first pause before failed writes or a dropped listener are tried again
 const RETRY_MAX_MS = 60000;      // the longest pause, as failures repeat
@@ -3937,8 +3950,13 @@ function syncShared() {
   }
 }
 
-/** The item list, in chunks under the document size limit, and its name on the flyer. */
+/**
+ * The item list, in chunks under the document size limit, and its name on the flyer. The store saves one
+ * document at a time, so every chunk carries the list's revision and how many chunks it has: a view that
+ * sees chunks from two saves, or fewer than were saved, waits for the rest (see applyOffers).
+ */
 function publishOffers() {
+  const rev = shortHash(JSON.stringify(state.offers));
   const chunks = [];
   let chunk = [], size = 0;
   for (const o of state.offers) {
@@ -3947,7 +3965,7 @@ function publishOffers() {
     chunk.push(o); size += n;
   }
   if (chunk.length) chunks.push(chunk);
-  chunks.forEach((offers, n) => { const path = flyerPath('offers', `c${n}`); write(path, path, { n, offers }); });
+  chunks.forEach((offers, n) => { const path = flyerPath('offers', `c${n}`); write(path, path, { n, of: chunks.length, rev, offers }); });
   for (let n = chunks.length; n < shared.offerChunks; n++) { const path = flyerPath('offers', `c${n}`); write(path, path, null); }
   shared.offerChunks = chunks.length;
   const itemList = { name: sheet.name, source: sheet.source, count: state.offers.length };
@@ -4017,6 +4035,12 @@ function applyFlyer(snap) {
   const data = snap.data();
   const wasUpdating = updatingBy();
   shared.flyer = data;
+  shared.synced.set(`${flyerPath()}#version`, canonical({ studioVersion: Number(data.studioVersion) || 0 }));
+  if ((Number(data.studioVersion) || 0) > STUDIO_VERSION && !shared.outdated) {
+    shared.outdated = true; shared.readOnly = true;
+    setStatus('Flyer Studio has been updated since this page was opened. Reload the page to keep working on this flyer; until then it is view-only.', true);
+    renderAll();
+  }
   if (updatingBy() && !wasUpdating) setStatus(`${shared.names.get(updatingBy()) || 'Someone'} is updating this flyer from a revised PDF. It is view-only until they finish.`);
   if (wasUpdating && !updatingBy()) setStatus('The flyer was updated from a revised PDF.');
   const details = { title: data.title || '', campaign: data.campaign || '', startDate: data.startDate || '', endDate: data.endDate || '', firstPage: data.firstPage || '', spreadsFrom: data.spreadsFrom || '' };
@@ -4058,6 +4082,31 @@ function applyPages(snap) {
   refresh();
 }
 
+/**
+ * Whether this view may change the open flyer on its own (relinking boxes, saving the item list): always for a
+ * flyer in this browser only; for a shared flyer, once the flyer, its boxes and its item list have all come from
+ * the server, and while no newer Flyer Studio has opened it. A listener's first answer can come from this
+ * browser's cache, hours old, and so can answers during a connection gap: changes worked out from those and
+ * saved would put old values back over everyone's newer edits.
+ */
+function canWriteOwn() { return !shared.flyerId || (shared.live.flyer && shared.live.hotspots && shared.live.offers && !shared.outdated); }
+
+/** Notes whether a listener's answer came from the server; the first time everything has, links the boxes to the item list. */
+function markLive(kind, snap) {
+  if (!shared.flyerId) return;
+  shared.live[kind] = !snap.metadata?.fromCache;
+  if (shared.relinked || !canWriteOwn()) return;
+  shared.relinked = true;
+  recordVersion();
+  if (state.offers.length && state.pages.length && relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); refresh(); }
+}
+
+/** Records on the flyer that this Flyer Studio has opened it, so copies older than it stop writing to it (see applyFlyer). */
+function recordVersion() {
+  if (readOnly() || (Number(shared.flyer?.studioVersion) || 0) >= STUDIO_VERSION) return;
+  write(`${flyerPath()}#version`, flyerPath(), { studioVersion: STUDIO_VERSION }, true);
+}
+
 /** Merges the hotspot documents into the pages, keeping this view's own objects (and its unsent edits). */
 function applyHotspots(docs, render = true) {
   shared.hotspotDocs = docs;
@@ -4095,14 +4144,18 @@ function applyHotspots(docs, render = true) {
   }
   state.selected = selectedId ? currentPage().hotspots.findIndex((h) => h.id === selectedId) : -1;
   if (state.multi.size) state.multi = new Set([...state.multi].filter((i) => i < currentPage().hotspots.length));
-  // The item list may have arrived before the boxes did: link them to it once they are here.
-  if (!shared.relinked && state.offers.length) { shared.relinked = true; if (relinkHotspots()) { logAs('Linked boxes to the item list'); persist(); } }
   if (render) refresh();
 }
 
 function applyOffers(snap) {
+  const docs = snap.docs.map((d) => d.data());
+  // Chunks of two different saves, or fewer chunks than the save wrote: the list is still being saved, and
+  // relinking boxes to half of it would drop their links to the rest.
+  if (new Set(docs.map((d) => d.rev ?? '')).size > 1 || docs.some((d) => d.of != null && d.of !== docs.length)) return;
   shared.offerChunks = snap.size;
-  const offers = snap.docs.flatMap((d) => d.data().offers || []);
+  // The store hands out frozen documents, and this page's script is not strict, so changing them fails
+  // without an error. Finding beans and loading AS400 ads change the item list in place: keep a copy.
+  const offers = docs.flatMap((d) => structuredClone(d.offers || []));
   const list = shared.flyer?.itemList;
   if (!offers.length && !list?.name) return;
   shared.applying = true;
@@ -4120,7 +4173,7 @@ function closeShared() {
   flushLog();
   shared.unsubscribe.forEach((stop) => stop());
   clearTimeout(shared.retryTimer);
-  Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false, retryTimer: 0, retryDelay: 0, reconnecting: 0, relinked: false });
+  Object.assign(shared, { unsubscribe: [], flyerId: '', flyer: null, hotspotDocs: null, offerChunks: 0, error: '', readOnly: false, retryTimer: 0, retryDelay: 0, reconnecting: 0, relinked: false, live: { flyer: false, hotspots: false, offers: false }, outdated: false });
   shared.synced.clear();
   try { localStorage.removeItem(SHARED_KEY); } catch {}
   setPresence();
@@ -4139,10 +4192,10 @@ async function openSharedFlyer(id) {
   $('exampleBanner').hidden = true;
   showItemList();
   shared.unsubscribe.push(
-    keepListening((next, error) => shared.db.doc(flyerPath()).onSnapshot(next, error), applyFlyer),
+    keepListening((next, error) => shared.db.doc(flyerPath()).onSnapshot(next, error), (snap) => { applyFlyer(snap); markLive('flyer', snap); }),
     keepListening((next, error) => shared.db.collection(flyerPath('pages')).orderBy('n').onSnapshot(next, error), applyPages),
-    keepListening((next, error) => shared.db.collection(flyerPath('hotspots')).onSnapshot(next, error), (snap) => applyHotspots(snap.docs)),
-    keepListening((next, error) => shared.db.collection(flyerPath('offers')).orderBy('n').onSnapshot(next, error), applyOffers),
+    keepListening((next, error) => shared.db.collection(flyerPath('hotspots')).onSnapshot(next, error), (snap) => { applyHotspots(snap.docs); markLive('hotspots', snap); }),
+    keepListening((next, error) => shared.db.collection(flyerPath('offers')).orderBy('n').onSnapshot(next, error), (snap) => { applyOffers(snap); markLive('offers', snap); }),
   );
   setPresence();
   renderAll();
