@@ -22,8 +22,9 @@ export type Matches = Match[][];
  * from vendor number + style for items listed without SKUs. A box can carry both, one product by SKU and another
  * by bean, and keeps every product either finds. A bean Scheels Search doesn't know is tried under the site's vendor
  * number (see repairBeans); one it still doesn't know is kept as pending. The rest are found by their printed name,
- * except boxes Flyer Studio marks as covering a whole range, which keep their link to the listing. In-store-only
- * hotspots are left as they are.
+ * except boxes Flyer Studio marks as covering a whole range, which keep their link to the listing. A box edited by hand
+ * in Flyer Studio (`locked`) gets what the name search finds as suggestions only, never ticked for it, since leaving
+ * it without products may be the merchandiser's choice. In-store-only hotspots are left as they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
@@ -70,7 +71,8 @@ export async function matchProducts(flyer: StudioFlyer, onProgress: (done: numbe
           ? { status: 'kept', candidates: found, chosen: found.map((c) => c.objectID), ...notes }
           : { status: 'offline', candidates: [], chosen: [], ...notes };
       }
-      return decide(h.label, h.priceText, nameMatch.get(h) ?? []);
+      const named = decide(h.label, h.priceText, nameMatch.get(h) ?? []);
+      return h.locked && named.status === 'matched' ? { ...named, status: 'review', chosen: [] } : named;
     }),
   );
 }
@@ -352,6 +354,14 @@ export function renderProducts(
         if (match.candidates.length > SELECT_ALL_FROM) row.append(selectAll(match, `${p}-${i}`, options.readOnly, options.onChange));
         row.append(list);
         if (!match.chosen.length) {
+          if (hotspot.locked && !hotspot.skus.length && !hotspot.objectIds?.length) {
+            row.append(
+              el('p', {
+                className: 'muted',
+                textContent: 'Edited by hand in Flyer Studio without products, so nothing is ticked for you.',
+              }),
+            );
+          }
           row.append(
             el('p', {
               className: 'muted',
