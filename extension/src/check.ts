@@ -206,11 +206,11 @@ export async function checkFlyer(pages: FlyerPage[], onProgress?: (text: string)
         .map((product) => [product.objectID, product]),
     );
     if (!online.size) {
-      add(box, 'problem', 'None of its products is on scheels.com, so the site says it’s unavailable online.');
+      add(box, 'check', 'None of its products is on scheels.com yet, so the site shows its link until one is.');
       continue;
     }
     const missing = ids.filter((_, i) => !found[i]);
-    if (missing.length) add(box, 'check', `Not on scheels.com, so the site leaves out ${named(missing)}.`);
+    if (missing.length) add(box, 'check', `Not on scheels.com yet, so the site leaves out ${named(missing)} until it is.`);
     const unlike = unlikeProducts(box.hotspot.label, [...online.values()]).map((product) => product.title);
     if (unlike.length) {
       const more = unlike.length > MAX_NAMED ? ` and ${unlike.length - MAX_NAMED} more` : '';

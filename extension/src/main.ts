@@ -205,9 +205,11 @@ function renderMatches() {
     return;
   }
   const counts = countByStatus(state.matches);
+  const corrected = state.matches.flat().reduce((n, match) => n + (match.corrected?.length ?? 0), 0);
   summary.textContent = [
     counts.kept ? `${counts.kept} confirmed from the item list` : '',
-    counts.offline ? `${counts.offline} with item-list SKUs not online yet` : '',
+    counts.offline ? `${counts.offline} not online yet` : '',
+    corrected ? `${corrected} bean${corrected === 1 ? '' : 's'} corrected to scheels.com's` : '',
     counts.instore ? `${counts.instore} in store only` : '',
     counts.range ? `${counts.range} for a whole range, linked to their listing` : '',
     `${counts.matched} matched by name`,

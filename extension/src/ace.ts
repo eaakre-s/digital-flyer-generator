@@ -33,6 +33,13 @@ export interface Match {
   candidates: Candidate[];
   /** objectIDs of the chosen candidates; empty means "no product, use the fallback link". */
   chosen: string[];
+  /**
+   * The hotspot's beans that Scheels Search doesn't list, even under the site's vendor number. They are kept: the site
+   * shows them once they are online, and the hotspot's link until then.
+   */
+  pending?: string[];
+  /** The hotspot's beans written with another vendor number than the site's, and the site's bean for each. */
+  corrected?: { from: string; to: string }[];
 }
 
 const money = (v: unknown) => (typeof v === 'number' && v > 0 ? Math.round(v * 100) / 100 : null);
@@ -180,6 +187,43 @@ export async function fetchProducts(objectIds: string[]): Promise<Candidate[]> {
     .filter((doc) => doc?.data)
     .map((doc) => toCandidate({ data: { ...doc.data, objectID: doc.id } }))
     .filter((c): c is Candidate => c !== null);
+}
+
+/** Whether the printed name carries the brand's first word, as "Smith's Trail Breaker…" carries "Smiths Consumer Products". */
+const brandPrinted = (label: string, brand: string) => {
+  const first = words(brand)[0];
+  return !!first && words(label).includes(first);
+};
+
+/**
+ * Products for beans Scheels Search doesn't know, where the site's bean differs only in its vendor number: written with
+ * leading zeros ("035886-1019399" for "35886-1019399"), or another vendor's number, as when an item's vendor changes after
+ * its product was created. Another vendor's product counts only when it is the one product carrying that style code and
+ * its brand is in the printed name, because unrelated products share short style codes. Each bean comes with the printed
+ * name of a box that carries it.
+ */
+export async function repairBeans(beans: { bean: string; label: string }[]): Promise<Map<string, Candidate>> {
+  const repaired = new Map<string, Candidate>();
+  const styled = beans.filter(({ bean }) => /^\d+-./.test(bean));
+  const unpadded = styled
+    .filter(({ bean }) => bean.startsWith('0'))
+    .map(({ bean }) => [bean, bean.replace(/^0+(?=\d)/, '')] as const);
+  const byId = new Map((await fetchProducts(unpadded.map(([, id]) => id))).map((c) => [c.objectID.toLowerCase(), c]));
+  for (const [bean, id] of unpadded) {
+    const product = byId.get(id.toLowerCase());
+    if (product) repaired.set(bean, product);
+  }
+
+  const rest = styled.filter(({ bean }) => !repaired.has(bean));
+  const styles = rest.map(({ bean }) => bean.slice(bean.indexOf('-') + 1));
+  const results = await searchMany(styles.map((query) => ({ query, pageSize: 20 })));
+  rest.forEach(({ bean, label }, i) => {
+    const suffix = `-${styles[i]}`.toLowerCase();
+    const hits = ((results[i]?.hits ?? []) as unknown[]).map(toCandidate).filter((c): c is Candidate => c !== null);
+    const same = hits.filter((c) => c.objectID.toLowerCase().endsWith(suffix));
+    if (same.length === 1 && brandPrinted(label, same[0].brand)) repaired.set(bean, same[0]);
+  });
+  return repaired;
 }
 
 /** Dollar amounts printed in a price line: "Now $2,199.97 · Reg. $3,499.97" → [2199.97, 3499.97]. */

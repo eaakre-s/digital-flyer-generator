@@ -1,4 +1,14 @@
-import { decide, fetchProducts, findBySkus, searchBatch, searchProducts, type Candidate, type Match, type MatchStatus } from './ace';
+import {
+  decide,
+  fetchProducts,
+  findBySkus,
+  repairBeans,
+  searchBatch,
+  searchProducts,
+  type Candidate,
+  type Match,
+  type MatchStatus,
+} from './ace';
 import { respellBrands, type BrandSpellings } from './facets';
 import type { Hotspot, StudioFlyer } from './flyer';
 import { fillFromProducts, linkPath } from './link';
@@ -10,8 +20,10 @@ export type Matches = Match[][];
  * Hotspots that already carry products are confirmed: their SKUs (from the item list, for products it has no
  * bean for) are searched, and their Scheels Search ids are looked up directly. Those ids are beans, or ids built
  * from vendor number + style for items listed without SKUs. A box can carry both, one product by SKU and another
- * by bean, and keeps every product either finds. The rest are found by their printed name, except boxes Flyer
- * Studio marks as covering a whole range, which keep their link to the listing. In-store-only hotspots are left as they are.
+ * by bean, and keeps every product either finds. A bean Scheels Search doesn't know is tried under the site's vendor
+ * number (see repairBeans); one it still doesn't know is kept as pending. The rest are found by their printed name,
+ * except boxes Flyer Studio marks as covering a whole range, which keep their link to the listing. In-store-only
+ * hotspots are left as they are.
  */
 export async function matchProducts(flyer: StudioFlyer, onProgress: (done: number, total: number) => void): Promise<Matches> {
   const hotspots = flyer.pages.flatMap((page) => page.hotspots);
@@ -22,8 +34,11 @@ export async function matchProducts(flyer: StudioFlyer, onProgress: (done: numbe
   const byName = hotspots.filter((h) => !h.inStoreOnly && !carries(h) && !wholeRange(h));
   const total = linked.length + byName.length;
   const skuResults = await findBySkus(bySku.map((h) => h.skus));
-  const idProducts = await fetchProducts([...new Set(linked.flatMap((h) => h.objectIds ?? []))]);
-  const byId = new Map(idProducts.map((c) => [c.objectID, c]));
+  const ids = [...new Set(linked.flatMap((h) => h.objectIds ?? []))];
+  const byId = new Map((await fetchProducts(ids)).map((c) => [c.objectID, c]));
+  const labelOf = new Map(linked.flatMap((h) => (h.objectIds ?? []).map((id) => [id, h.label] as const)));
+  const repairs = await repairBeans(ids.filter((id) => !byId.has(id)).map((bean) => ({ bean, label: labelOf.get(bean) ?? '' })));
+  repairs.forEach((product, bean) => byId.set(bean, product));
   const skuFound = new Map(bySku.map((h, i) => [h, skuResults[i] ?? []]));
   onProgress(linked.length, total);
   const nameResults = await searchProducts(
@@ -44,9 +59,16 @@ export async function matchProducts(flyer: StudioFlyer, onProgress: (done: numbe
       if (wholeRange(h)) return { status: 'range', candidates: [], chosen: [] };
       const found = skuMatch.get(h);
       if (found) {
+        const beans = h.objectIds ?? [];
+        const pending = beans.filter((id) => !byId.has(id));
+        const corrected = beans.flatMap((from) => {
+          const to = byId.get(from)?.objectID;
+          return to && to !== from ? [{ from, to }] : [];
+        });
+        const notes = { ...(pending.length ? { pending } : {}), ...(corrected.length ? { corrected } : {}) };
         return found.length
-          ? { status: 'kept', candidates: found, chosen: found.map((c) => c.objectID) }
-          : { status: 'offline', candidates: [], chosen: [] };
+          ? { status: 'kept', candidates: found, chosen: found.map((c) => c.objectID), ...notes }
+          : { status: 'offline', candidates: [], chosen: [], ...notes };
       }
       return decide(h.label, h.priceText, nameMatch.get(h) ?? []);
     }),
@@ -67,8 +89,8 @@ const savedFallback = (hotspot: Hotspot, match: Match, spellings?: BrandSpelling
   respellBrands(filledFallback(hotspot, match), spellings);
 
 /**
- * The flyer with each hotspot's products applied as objectIDs (beans), and the fallback link filled in from
- * the products found, its brands spelled as `spellings` says. SKUs are left as they came: the item list's for
+ * The flyer with each hotspot's products applied as objectIDs (beans): the ticked ones, corrected to the site's bean,
+ * then any pending ones. The fallback link is filled in from the products found, its brands spelled as `spellings` says. SKUs are left as they came: the item list's for
  * products it has no bean for, or a person's, pointing at particular colours or sizes.
  */
 export function withChosenSkus(flyer: StudioFlyer, matches: Matches, spellings?: BrandSpellings): StudioFlyer {
@@ -80,10 +102,8 @@ export function withChosenSkus(flyer: StudioFlyer, matches: Matches, spellings?:
         const match = matches[p]?.[i];
         if (!match || match.status === 'instore') return hotspot;
         const h = { ...hotspot, fallback: savedFallback(hotspot, match, spellings) };
-        // Unconfirmed style-based ids would open an empty product drawer on the site, so they are dropped.
-        const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID));
-        if (match.status === 'offline' && !chosen.length) return { ...h, objectIds: [] };
-        return { ...h, objectIds: chosen.map((c) => c.objectID) };
+        const chosen = match.candidates.filter((c) => match.chosen.includes(c.objectID)).map((c) => c.objectID);
+        return { ...h, objectIds: [...new Set([...chosen, ...(match.pending ?? [])])] };
       }),
     })),
   };
@@ -107,6 +127,8 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
   review: 'Check',
   none: 'Not found',
 };
+
+const named = (beans: string[]) => (beans.length === 1 ? `bean ${beans[0]}` : `beans ${beans.join(', ')}`);
 
 const price = (c: Candidate) => {
   const sale = c.salePrices[0];
@@ -255,7 +277,7 @@ export function renderProducts(
     page.hotspots.forEach((hotspot, i) => {
       const match = matches[p]?.[i];
       if (!match) return;
-      if (options.reviewOnly && !['review', 'none', 'offline'].includes(match.status)) return;
+      if (options.reviewOnly && !['review', 'none', 'offline'].includes(match.status) && !match.corrected) return;
 
       const row = el('li', { className: `prow ${match.status}` });
       row.append(
@@ -272,6 +294,13 @@ export function renderProducts(
       const showCandidates = match.candidates.length > 0;
       if (match.status === 'instore') {
         row.append(el('p', { className: 'muted', textContent: 'Shown as in store only; no online link.' }));
+      } else if (match.status === 'offline' && !showCandidates && match.pending) {
+        row.append(
+          el('p', {
+            className: 'muted',
+            textContent: `Scheels Search doesn't list ${named(match.pending)} yet. Kept: scheels.com shows the product once it is online, and links to ${linkPath(savedFallback(hotspot, match, options.spellings), hotspot.label)} until then. Search Scheels below if it is online under another id.`,
+          }),
+        );
       } else if (match.status === 'offline' && !showCandidates) {
         row.append(
           el('p', {
@@ -324,6 +353,13 @@ export function renderProducts(
             }),
           );
         }
+      }
+      if (match.corrected) {
+        const fixes = match.corrected.map(({ from, to }) => `${from} → ${to}`).join(', ');
+        row.append(el('p', { className: 'muted', textContent: `Bean corrected to the one scheels.com uses: ${fixes}.` }));
+      }
+      if (match.pending && showCandidates) {
+        row.append(el('p', { className: 'muted', textContent: `Also kept, not on scheels.com yet: ${named(match.pending)}.` }));
       }
       if (match.status !== 'instore') {
         row.append(searchControls(match, hotspot.label, `${p}-${i}`, options.readOnly, options.onChange));
