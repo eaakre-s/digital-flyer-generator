@@ -761,7 +761,9 @@ function relinkHotspots() {
       // A whole-brand listing nobody edited gains the category (and gender) its item-list lines name.
       const narrowed = derived?.fallback.category ? derived.fallback : null;
       const wholeBrand = narrowed && { attributes: narrowed.attributes.filter((a) => a.attributeName === 'brand') };
-      if (narrowed && !h.linkEdited && canonical(h.fallback || {}) === canonical(wholeBrand)) { h.fallback = narrowed; changed++; }
+      const { onSale, ...listing } = h.fallback || {};
+      if (narrowed && !h.linkEdited && canonical(listing) === canonical(wholeBrand)) { h.fallback = onSale ? { ...narrowed, onSale } : narrowed; changed++; }
+      if (tickSale(h)) changed++;
       // Boxes linked to items that have no SKU get the items' style-based ids (added after some boxes were linked).
       if (!h.skus?.length && derived) {
         if (derived.styleIds.join(',') !== (h.objectIds || []).join(',')) { h.objectIds = derived.styleIds; changed++; continue; }
@@ -2036,13 +2038,15 @@ function fromOffers(offers, label, printedBrand) {
 const listSkus = (h, derived) => (!h.beans?.length ? derived.skus : h.beansEdited || !derived.beans.length ? [] : derived.looseSkus);
 
 /**
- * True when a price line prints a sale or offer (a sale price, % or $ off, a gift, a price beside the
- * regular one), not just a regular price: "$500", "$175–$185" and "Reg. $229.95" are regular prices.
+ * True when a price line prints a discount (a sale price, % or $ off, a price beside the regular one), not
+ * just a regular price: "$500", "$175–$185" and "Reg. $229.95" are regular prices.
  */
-const printsOffer = (priceText) => {
+const printsDiscount = (priceText) => {
   const text = String(priceText || '').replace(/\$\s*[\d,.]+\s*[–—-]\s*\$?\s*[\d,.]+/g, '$0');
-  return /\b(sale|now|save|off|free|was|bogo|buy)\b|%/i.test(text) || (text.match(/\$\s*\d/g) || []).length > 1;
+  return /\b(sale|now|save|off|was)\b|%/i.test(text) || (text.match(/\$\s*\d/g) || []).length > 1;
 };
+/** True when a price line prints a sale or offer: a discount (see printsDiscount), a gift or a buy-one-get-one. */
+const printsOffer = (priceText) => printsDiscount(priceText) || /\b(free|bogo|buy)\b/i.test(String(priceText || ''));
 
 /** A sale cell as it reads on a price line: 111.99 → "Sale $111.99", 0.2 (a % cell) → "20% off", text as written. */
 function saleText(sale) {
@@ -2153,13 +2157,15 @@ function cleanHotspot(h, offersById) {
   const entries = offerIds.map((id) => offersById.get(id));
   const { brand, skus, looseSkus, beans, styleIds, fallback, inStoreOnly, issues } = fromOffers(entries, label, String(h?.brand || '').trim());
   const note = [String(h?.note || '').trim(), ...issues].filter(Boolean).join(' ');
-  return {
+  const clean = {
     id: newId('h'), label, priceText: completePrice(h?.priceText, entries), description: String(h?.description || '').trim(), brand,
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: Array.isArray(h?.textItemIds) ? h.textItemIds.map(Number).filter(Number.isFinite) : [],
     offerIds, skus: beans.length ? looseSkus : skus, beans, objectIds: styleIds, fallback, inStoreOnly,
     confidence: h?.confidence === 'high' && !issues.length ? 'high' : 'low', note, locked: false,
   };
+  tickSale(clean);
+  return clean;
 }
 
 // ---------- matching a box to the item list without Claude ----------
@@ -2294,8 +2300,9 @@ function clearMatch([best, next]) {
 
 /**
  * Links a hotspot to item-list entries, taking their beans and the SKUs of products without one (see
- * listSkus), the in-store flag and (unless set by hand) the fallback link from them. A whole-range line
- * the box names products of links those products instead (see namedProducts).
+ * listSkus), the in-store flag and (unless set by hand) the fallback link from them, on sale only when
+ * listsSale says so. A whole-range line the box names products of links those products instead (see
+ * namedProducts).
  */
 function linkToEntries(h, ids) {
   const index = offerIndex(state.offers);
@@ -2305,7 +2312,7 @@ function linkToEntries(h, ids) {
   if (!h.beansEdited) h.beans = derived.beans;
   const skus = h.skusEdited && derived.beans.length ? h.skus : listSkus(h, derived);
   Object.assign(h, { offerIds: linked, skus, objectIds: derived.styleIds, inStoreOnly: derived.inStoreOnly, brand: derived.brand, priceText: completePrice(h.priceText, entries) });
-  if (!h.linkEdited) h.fallback = derived.fallback;
+  if (!h.linkEdited) { h.fallback = derived.fallback; tickSale(h); }
 }
 
 function matchPageFromList(i) {
@@ -2496,6 +2503,19 @@ function problemsFor(h, items) {
 const noProduct = (h) => !state.example && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly && !linksRange(h);
 /** A whole-range box with no product of its own: it links to its listing, and the importer leaves it that way. */
 const rangeOnly = (h) => linksRange(h) && !h.skus?.length && !h.objectIds?.length && !h.beans?.length && !h.inStoreOnly;
+/**
+ * Whether a box's listing should show only products on sale: a whole-range box (see rangeOnly) that prints
+ * a discount and links to a brand or category listing, unless its link was set by hand. A box for
+ * particular products that falls back to its brand's listing keeps the whole range.
+ */
+const listsSale = (h) => !!h.fallback && rangeOnly(h) && !h.linkEdited && printsDiscount(h.priceText) && linkKindOf(h) === 'products'
+  && !!(h.fallback.category || h.fallback.attributes?.some((a) => a.attributeName && a.attributeValue));
+/** Ticks On sale only on a box listsSale picks. Never unticks, so a tick added any other way stays. True when it changed the box. */
+const tickSale = (h) => {
+  if (h.fallback?.onSale || !listsSale(h)) return false;
+  h.fallback = { ...h.fallback, onSale: true };
+  return true;
+};
 /** Claude marked it to check, or it has no product yet (the importer then has to find one by name). */
 const lowConfidence = (h) => h.confidence === 'low' || noProduct(h);
 
@@ -2692,7 +2712,7 @@ function renderInspectorBody() {
   if (problems.length) body.append(el('ul', { className: 'problems' }, ...problems.map((t) => el('li', { textContent: t }))));
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
-  if (rangeOnly(h)) body.append(el('div', { className: 'note', textContent: 'Its item-list line covers a whole range, so it links to the listing below, not a product. Type a bean above to show one product instead.' }));
+  if (rangeOnly(h)) body.append(el('div', { className: 'note', textContent: `Its item-list line covers a whole range, so it links to the listing below, not a product.${listsSale(h) && h.fallback.onSale ? ' It prints a discount, so the listing shows only products on sale; untick On sale only to list the whole range.' : ''} Type a bean above to show one product instead.` }));
   if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No product yet, so this box is marked to check. Link one (${mcp ? 'Find in AS400 below, ' : ''}the item list, or a bean typed above), or tick Reviewed to let the importer find the product by its name and price.` }));
   const missing = missingBeans(h);
   if (missing.length) {
@@ -3591,7 +3611,7 @@ const shared = {
 const SHARED_KEY = 'flyer-studio:shared';
 // Raised with every change to what Flyer Studio writes on its own (relinking, the item list). A flyer records
 // the highest one that has opened it, and an older copy still open somewhere then stops writing to it.
-const STUDIO_VERSION = 45;
+const STUDIO_VERSION = 46;
 const MAX_WRITES = 6;            // writes in flight at once; more are queued
 const RETRY_MS = 5000;           // first pause before failed writes or a dropped listener are tried again
 const RETRY_MAX_MS = 60000;      // the longest pause, as failures repeat
