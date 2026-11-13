@@ -10,6 +10,17 @@ export interface ImageLink {
   defaultHost: string;
 }
 
+/** A link at the bottom of the site's product panel, as on a shoppable image. */
+export interface PanelLink {
+  label: string;
+  link: FallbackLink;
+  ariaLabel?: string;
+  clickId?: string;
+}
+
+/** Most links a hotspot's panel takes (the schema's limit). */
+export const MAX_PANEL_LINKS = 4;
+
 export interface Hotspot {
   label: string;
   priceText: string;
@@ -21,6 +32,10 @@ export interface Hotspot {
   description?: string;
   /** Replaces the panel button's text. */
   buttonText?: string;
+  /** Heading above `links`. */
+  linksTitle?: string;
+  /** Extra links at the bottom of the site's product panel. */
+  links?: PanelLink[];
   fallback: FallbackLink;
   locked: boolean;
   confidence: 'high' | 'low';
@@ -59,12 +74,24 @@ const normalizeSku = (sku: string) => (/^\d{10}$/.test(sku) ? `0${sku}` : sku);
 // is looked up like an item-list style id and swapped for that product's SKU.
 const SKU_PATTERN = /^\d{8,13}$/;
 
+function cleanPanelLink(raw: any): PanelLink {
+  return {
+    label: text(raw?.label),
+    link: toFallbackLink(raw?.link),
+    ...(text(raw?.ariaLabel) ? { ariaLabel: text(raw?.ariaLabel) } : {}),
+    ...(text(raw?.clickId) ? { clickId: text(raw?.clickId) } : {}),
+  };
+}
+
 function cleanHotspot(raw: any): Hotspot {
   const box = raw?.box ?? {};
   const x = clamp(Number(box.x) || 0, 0, 100);
   const y = clamp(Number(box.y) || 0, 0, 100);
   const entered = Array.isArray(raw?.skus) ? raw.skus.map(text).filter(Boolean).map(normalizeSku) : [];
   const objectIds = Array.isArray(raw?.objectIds) ? raw.objectIds.map(text).filter(Boolean) : [];
+  const links = Array.isArray(raw?.links)
+    ? raw.links.map(cleanPanelLink).filter((l: PanelLink) => l.label).slice(0, MAX_PANEL_LINKS)
+    : [];
   return {
     label: text(raw?.label),
     priceText: text(raw?.priceText),
@@ -79,6 +106,8 @@ function cleanHotspot(raw: any): Hotspot {
     inStoreOnly: raw?.inStoreOnly === true,
     ...(text(raw?.description) ? { description: text(raw?.description) } : {}),
     ...(text(raw?.buttonText) ? { buttonText: text(raw?.buttonText) } : {}),
+    ...(text(raw?.linksTitle) ? { linksTitle: text(raw?.linksTitle) } : {}),
+    ...(links.length ? { links } : {}),
     fallback: toFallbackLink(raw?.fallback, text(raw?.label)),
     locked: raw?.locked === true,
     confidence: raw?.confidence === 'high' ? 'high' : 'low',
@@ -154,13 +183,17 @@ export async function findImage(name: string, media: MediaSettings): Promise<Ima
   }
 }
 
-/** Pages whose image is not published yet go in without one; the site skips them until a re-import adds it. */
-/** A hotspot as the Digital Flyer item stores it, without what only the import uses. */
+/**
+ * A hotspot as the Digital Flyer item stores it, without what only the import uses. Panel links with no
+ * label yet are left out: Amplience requires one and would reject the whole flyer.
+ */
 export function savedHotspot(hotspot: Hotspot): Hotspot {
-  const { wholeRange: _importOnly, ...saved } = hotspot;
-  return saved;
+  const { wholeRange: _importOnly, links, ...saved } = hotspot;
+  const kept = (links ?? []).map(cleanPanelLink).filter((l) => l.label);
+  return kept.length ? { ...saved, links: kept } : saved;
 }
 
+/** Pages whose image is not published yet go in without one; the site skips them until a re-import adds it. */
 export const buildPages = (flyer: StudioFlyer, images: (ImageLink | null)[]): FlyerPage[] =>
   flyer.pages.map((page, i) => {
     const hotspots = page.hotspots.map(savedHotspot);

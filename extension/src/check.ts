@@ -9,7 +9,7 @@ import { searchMany } from './ace';
 import { loadCategories } from './categories';
 import { facetFilters } from './facets';
 import type { FlyerPage, Hotspot } from './flyer';
-import { toFallbackLink, type FallbackLink } from './link';
+import { hasTarget, toFallbackLink, type FallbackLink } from './link';
 
 export interface Finding {
   page: number;
@@ -153,6 +153,12 @@ export async function checkFlyer(pages: FlyerPage[], onProgress?: (text: string)
     page.hotspots.forEach((hotspot, h) => {
       const box = { p, h, hotspot, label: hotspot.label.trim() || `Hotspot ${h + 1}` };
       if (!hotspot.label.trim()) add(box, 'check', 'It has no product name, which the site shows as its title.');
+      for (const panelLink of hotspot.links ?? []) {
+        const link = toFallbackLink(panelLink.link);
+        if (!hasTarget(link) && !link.searchTerm) {
+          add(box, 'check', `Its panel link “${panelLink.label}” opens nothing, so the site leaves it out.`);
+        }
+      }
       // In-store-only boxes open the store finder.
       if (!hotspot.inStoreOnly) boxes.push(box);
     });

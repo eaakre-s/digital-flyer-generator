@@ -1,6 +1,7 @@
 import { fetchProducts, searchBatch, type Candidate } from './ace';
 import {
   findImage,
+  MAX_PANEL_LINKS,
   parseStudioExport,
   savedHotspot,
   toStudioExport,
@@ -15,6 +16,7 @@ import { copyText } from './copy';
 import {
   defaultButtonText,
   fillFromProducts,
+  hasTarget,
   isExternalUrl,
   linkKind,
   linkPath,
@@ -325,19 +327,45 @@ function typingInput(
 
 const SITE = 'https://www.scheels.com';
 
-/**
- * The link a hotspot opens when it has no product, in the fields of the Amplience link partial: a
- * category, attribute filters (brand, gender, …), on sale, and a search term as the last resort. A
- * preview shows the page it opens on scheels.com.
- */
-// The kind of link chosen for a hotspot, kept while its fields are still empty: an empty page link
-// would otherwise read as a products link.
-const chosenKinds = new WeakMap<Hotspot, LinkKind>();
+// The kind chosen for a link, kept while its fields are still empty: an empty page link would
+// otherwise read as a products link.
+const chosenKinds = new WeakMap<object, LinkKind>();
 
-function renderFallback(hotspot: Hotspot) {
+/** A link the panel edits: the hotspot's own, used when it has no product, or one of its panel links. */
+interface LinkTarget {
+  /** What holds the link; the kind chosen for the link is kept against it. */
+  owner: object;
+  get: () => FallbackLink;
+  set: (link: FallbackLink) => void;
+  heading: string;
+  /** Starts the ids of the link's fields, which must be unique in the panel. */
+  ids: string;
+  /** What an empty link searches for on the site; empty when it opens nothing. */
+  searchFor: () => string;
+  /** The hotspot's own link, which also takes the button text and can be filled in from its products. */
+  own?: boolean;
+}
+
+const ownLink = (hotspot: Hotspot): LinkTarget => ({
+  owner: hotspot,
+  get: () => hotspot.fallback,
+  set: (link) => (hotspot.fallback = link),
+  heading: 'Link when no product',
+  ids: 'ed',
+  searchFor: () => hotspot.label,
+  own: true,
+});
+
+/**
+ * The fields of one link, in those of the Amplience link partial: a category, attribute filters (brand,
+ * gender, …), on sale, and a search term as the last resort; or a content page or URL. A preview shows the
+ * page it opens on scheels.com. `intro` goes under the heading: fields of what holds the link, like a
+ * panel link's label.
+ */
+function renderLink(hotspot: Hotspot, target: LinkTarget, intro: HTMLElement[] = []) {
   const ro = deps.readOnly();
-  const link: FallbackLink = hotspot.fallback;
-  const kind = chosenKinds.get(hotspot) ?? linkKind(link);
+  const link: FallbackLink = target.get();
+  const kind = chosenKinds.get(target.owner) ?? linkKind(link);
   const group = el('div', { className: 'group' });
   // Amplience's sandbox can stop a click from opening a tab; the browser's own "Open Link in New Tab" still works.
   const preview = el('a', {
@@ -376,7 +404,13 @@ function renderFallback(hotspot: Hotspot) {
   const updatePreview = () => {
     updateCount();
     if (buttonText) buttonText.placeholder = defaultButtonText(toFallbackLink(link), hotspot.label);
-    const path = linkPath(toFallbackLink(link), hotspot.label);
+    const current = toFallbackLink(link);
+    if (!target.searchFor() && !hasTarget(current) && !current.searchTerm) {
+      preview.replaceChildren('nothing yet: the site leaves this link out');
+      preview.removeAttribute('href');
+      return;
+    }
+    const path = linkPath(current, target.searchFor());
     preview.replaceChildren(path, el('span', { ariaHidden: 'true', textContent: ' ↗' }), el('span', { className: 'sr', textContent: ' (opens in a new tab)' }));
     preview.href = isExternalUrl(path) ? path : SITE + path;
   };
@@ -418,14 +452,14 @@ function renderFallback(hotspot: Hotspot) {
   kindSelect.addEventListener('change', () => {
     const next = kindSelect.value as LinkKind;
     const keep = { newPage: link.newPage, clickID: link.clickID };
-    hotspot.fallback = Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined)) as FallbackLink;
-    chosenKinds.set(hotspot, next);
+    target.set(Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined)) as FallbackLink);
+    chosenKinds.set(target.owner, next);
     changed(hotspot);
     renderInspector();
   });
-  group.append(el('h4', { textContent: 'Link when no product' }), field('Link to', kindSelect));
+  group.append(el('h4', { textContent: target.heading }), ...intro, field('Link to', kindSelect));
 
-  if (kind === 'products') renderProductsLink(hotspot, link, group, input, checkbox, linkField, edited);
+  if (kind === 'products') renderProductsLink(hotspot, target, link, group, input, checkbox, linkField, edited);
   else if (kind === 'url') {
     group.append(
       linkField('URL slug', 'urlSlug', 'e.g. /stores or https://www.youtube.com/watch?v=…'),
@@ -437,14 +471,16 @@ function renderFallback(hotspot: Hotspot) {
   }
   if (kind !== 'products') group.append(checkbox('Open in a new tab', 'newPage', !!link.newPage));
 
-  // Placeholder: the text the site shows when this is left empty.
-  buttonText = typingInput(hotspot.buttonText ?? '', defaultButtonText(toFallbackLink(link), hotspot.label), ro, hotspot, (v) => {
-    const value = v.trim();
-    if (value) hotspot.buttonText = value;
-    else delete hotspot.buttonText;
-  });
-  buttonText.maxLength = 60;
-  group.append(field('Button text (optional)', buttonText));
+  if (target.own) {
+    // Placeholder: the text the site shows when this is left empty.
+    buttonText = typingInput(hotspot.buttonText ?? '', defaultButtonText(toFallbackLink(link), hotspot.label), ro, hotspot, (v) => {
+      const value = v.trim();
+      if (value) hotspot.buttonText = value;
+      else delete hotspot.buttonText;
+    });
+    buttonText.maxLength = 60;
+    group.append(field('Button text (optional)', buttonText));
+  }
 
   updatePreview();
   // Category and filter links are laid out by the site's URL rules, which may still be loading.
@@ -478,22 +514,22 @@ function renderFallback(hotspot: Hotspot) {
  * (data/categories.csv). The chosen category's name shows under the field; a slug the list does not
  * have is flagged.
  */
-function categoryField(link: FallbackLink, edited: () => void) {
+function categoryField(link: FallbackLink, edited: () => void, ids: string) {
   const box = el('input', {
     type: 'text',
-    id: 'edCategory',
+    id: `${ids}Category`,
     value: link.category ?? '',
     placeholder: 'Search by name, e.g. hiking boots',
     autocomplete: 'off',
     disabled: deps.readOnly(),
   }) as HTMLInputElement;
-  const list = el('ul', { id: 'edCategoryList', className: 'combo', hidden: true });
+  const list = el('ul', { id: `${ids}CategoryList`, className: 'combo', hidden: true });
   list.setAttribute('role', 'listbox');
   box.setAttribute('role', 'combobox');
   box.setAttribute('aria-autocomplete', 'list');
   box.setAttribute('aria-controls', list.id);
   box.setAttribute('aria-expanded', 'false');
-  const note = el('p', { className: 'muted small', id: 'edCategoryNote' });
+  const note = el('p', { className: 'muted small', id: `${ids}CategoryNote` });
   box.setAttribute('aria-describedby', note.id);
   let options: Category[] = [];
   let active = -1;
@@ -513,7 +549,7 @@ function categoryField(link: FallbackLink, edited: () => void) {
   const highlight = (i: number) => {
     active = i;
     [...list.children].forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
-    box.setAttribute('aria-activedescendant', `edCategoryOpt${i}`);
+    box.setAttribute('aria-activedescendant', `${ids}CategoryOpt${i}`);
     list.children[i]?.scrollIntoView({ block: 'nearest' });
   };
   const choose = (category: Category) => {
@@ -532,7 +568,7 @@ function categoryField(link: FallbackLink, edited: () => void) {
       ...options.map((category, i) => {
         const item = el(
           'li',
-          { id: `edCategoryOpt${i}` },
+          { id: `${ids}CategoryOpt${i}` },
           el('span', { textContent: category.name }),
           el('span', { className: 'slug', textContent: category.slug }),
         );
@@ -586,6 +622,7 @@ const LINK_KINDS: [LinkKind, string][] = [
 /** The category, filter, on-sale and search-term fields of a link that lists products. */
 function renderProductsLink(
   hotspot: Hotspot,
+  target: LinkTarget,
   link: FallbackLink,
   group: HTMLElement,
   input: (value: string, placeholder: string, onInput: (v: string) => void, id?: string) => HTMLInputElement,
@@ -594,18 +631,18 @@ function renderProductsLink(
   edited: () => void,
 ) {
   const ro = deps.readOnly();
-  group.append(categoryField(link, edited));
+  group.append(categoryField(link, edited, target.ids));
 
   const filters = el('div', { className: 'filters' });
-  const names = el('datalist', { id: 'edAttrNames' }, ...linkAttributeNames().map((n) => el('option', { value: n })));
+  const names = el('datalist', { id: `${target.ids}AttrNames` }, ...linkAttributeNames().map((n) => el('option', { value: n })));
   (link.attributes ?? []).forEach((attribute, i) => {
-    const name = input(attribute.attributeName, 'name', (v) => (attribute.attributeName = v), `edAttr${i}`);
-    name.setAttribute('list', 'edAttrNames');
+    const name = input(attribute.attributeName, 'name', (v) => (attribute.attributeName = v), `${target.ids}Attr${i}`);
+    name.setAttribute('list', names.id);
     name.setAttribute('aria-label', `Filter ${i + 1} name`);
     const value = input(attribute.attributeValue, 'value', (v) => (attribute.attributeValue = v));
     value.setAttribute('aria-label', `Filter ${i + 1} value`);
     // The values this filter takes in Scheels Search, with product counts, given the rest of the link.
-    const values = el('datalist', { id: `edAttrValues${i}` });
+    const values = el('datalist', { id: `${target.ids}AttrValues${i}` });
     value.setAttribute('list', values.id);
     value.addEventListener('focus', async () => {
       if (!attribute.attributeName.trim()) return;
@@ -628,7 +665,7 @@ function renderProductsLink(
   add.addEventListener('click', () => {
     link.attributes = [...(link.attributes ?? []), { attributeName: link.attributes?.length ? '' : 'brand', attributeValue: '' }];
     renderInspector();
-    $(`edAttr${link.attributes.length - 1}`)?.focus();
+    $(`${target.ids}Attr${link.attributes.length - 1}`)?.focus();
   });
   group.append(
     el('span', { className: 'flabel', textContent: 'Filters (brand, gender, team, …)' }),
@@ -636,7 +673,7 @@ function renderProductsLink(
     names,
     add,
     checkbox('On sale only', 'onSale', !!link.onSale),
-    linkField('Search term (used only with no category or filter)', 'searchTerm', hotspot.label),
+    linkField('Search term (used only with no category or filter)', 'searchTerm', target.searchFor()),
   );
   if (deps.linkGeneratorUrl) {
     group.append(
@@ -652,15 +689,79 @@ function renderProductsLink(
 
   // Category and brand from the products this hotspot links to, for when they go offline.
   const linked = (hotspot.objectIds ?? []).map((id) => state.products.get(id)).filter((c) => !!c);
-  if (linked.length) {
+  if (target.own && linked.length) {
     const fill = el('button', { type: 'button', className: 'link', textContent: 'Fill in from linked products', disabled: ro });
     fill.addEventListener('click', () => {
-      hotspot.fallback = fillFromProducts(toFallbackLink(link), linked);
+      target.set(fillFromProducts(toFallbackLink(link), linked));
       changed(hotspot);
       renderInspector();
     });
     group.append(fill);
   }
+}
+
+/**
+ * The hotspot's panel links: extra links at the bottom of its product panel on the site, under an optional
+ * heading, as on a shoppable image. A link with no label yet is not saved.
+ */
+function renderPanelLinks(hotspot: Hotspot): HTMLElement[] {
+  const ro = deps.readOnly();
+  const links = hotspot.links ?? [];
+  const heading = typingInput(hotspot.linksTitle ?? '', 'e.g. More from Bombas', ro, hotspot, (v) => {
+    const value = v.trim();
+    if (value) hotspot.linksTitle = value;
+    else delete hotspot.linksTitle;
+  });
+  heading.maxLength = 50;
+  const add = el('button', {
+    type: 'button',
+    className: 'link',
+    textContent: '+ Add link',
+    disabled: ro || links.length >= MAX_PANEL_LINKS,
+  });
+  add.addEventListener('click', () => {
+    hotspot.links = [...links, { label: '', link: {} }];
+    changed(hotspot);
+    renderInspector();
+    $(`edLink${links.length}Label`)?.focus();
+  });
+  const intro = el(
+    'div',
+    { className: 'group' },
+    el('h4', { textContent: 'Panel links' }),
+    el('p', {
+      className: 'muted',
+      textContent: `Optional links at the bottom of the product panel, as on a shoppable image: under the products, or under the button when there are none. Up to ${MAX_PANEL_LINKS}.`,
+    }),
+    field('Heading (optional)', heading),
+    add,
+  );
+  return [
+    intro,
+    ...links.map((item, i) => {
+      const label = typingInput(item.label, 'e.g. Size guide', ro, hotspot, (v) => (item.label = v.trim()), `edLink${i}Label`);
+      label.maxLength = 40;
+      const remove = el('button', { type: 'button', className: 'link', textContent: 'Remove link', disabled: ro });
+      remove.setAttribute('aria-label', `Remove panel link ${i + 1}`);
+      remove.addEventListener('click', () => {
+        links.splice(i, 1);
+        if (!links.length) delete hotspot.links;
+        changed(hotspot);
+        renderInspector();
+      });
+      const target: LinkTarget = {
+        owner: item,
+        get: () => item.link,
+        set: (link) => (item.link = link),
+        heading: `Panel link ${i + 1}`,
+        ids: `edLink${i}`,
+        searchFor: () => '',
+      };
+      const group = renderLink(hotspot, target, [field('Label', label)]);
+      group.append(remove);
+      return group;
+    }),
+  ];
 }
 
 /** A multi-line note shown under the price on the site, e.g. the terms of an offer. Written when left. */
@@ -780,7 +881,8 @@ function renderInspector() {
     el('h3', { textContent: `Hotspot ${state.selected + 1}` }),
     details,
     products,
-    renderFallback(hotspot),
+    renderLink(hotspot, ownLink(hotspot)),
+    ...renderPanelLinks(hotspot),
   );
 
   const del = el('button', {

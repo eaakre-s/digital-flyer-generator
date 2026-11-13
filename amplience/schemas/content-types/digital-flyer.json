@@ -134,6 +134,60 @@
                   "type": "string",
                   "maxLength": 60
                 },
+                "linksTitle": {
+                  "title": "Links title",
+                  "description": "Optional heading above the links at the bottom of the product panel.",
+                  "type": "string",
+                  "maxLength": 50
+                },
+                "links": {
+                  "title": "Links",
+                  "description": "Extra links at the bottom of the product panel, as on a shoppable image.",
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "required": ["label", "link"],
+                    "properties": {
+                      "label": { "title": "Label", "description": "Text of the link", "type": "string", "minLength": 1, "maxLength": 40 },
+                      "ariaLabel": { "title": "Aria label", "description": "Optional. Read by screen readers after the label.", "type": "string", "maxLength": 255 },
+                      "clickId": { "title": "Click ID", "description": "Optional. Id for Google Analytics; digital-flyer-link when empty.", "type": "string" },
+                      "link": {
+                        "title": "Link",
+                        "description": "The fields of Link when no product, copied for the same reason. Keep the two in step.",
+                        "type": "object",
+                        "properties": {
+                            "category": { "title": "Category", "description": "The category key of the category to be linked", "type": "string" },
+                            "attributes": {
+                              "title": "Attribute Refinements",
+                              "type": "array",
+                              "items": {
+                                "title": "Attributes",
+                                "type": "object",
+                                "properties": {
+                                  "attributeName": { "title": "Attribute Name", "type": "string" },
+                                  "attributeValue": { "title": "Attribute Value", "type": "string" }
+                                }
+                              }
+                            },
+                            "onSale": { "title": "On Sale", "type": "boolean" },
+                            "urlSlug": { "title": "URL Slug", "description": "A path on scheels.com, or a full URL to another site", "type": "string" },
+                            "pageID": { "title": "Page ID", "description": "The page ID of the content page to be linked", "type": "string" },
+                            "productID": { "title": "Product ID", "description": "If linking to a PDP, enter a product ID here", "type": "string" },
+                            "anchor": { "title": "Anchor", "type": "string" },
+                            "useStoreAvailability": { "title": "Use Store Availability", "type": "boolean" },
+                            "newPage": { "title": "Open in New Page", "type": "boolean" },
+                            "clickID": { "title": "Click ID", "description": "Click ID for analytics tracking", "type": "string" },
+                            "searchTerm": {
+                              "title": "Search term",
+                              "description": "Used only when no category or attribute is set: links to search results for this term.",
+                              "type": "string"
+                            }
+                        }
+                      }
+                    }
+                  }
+                },
                 "inStoreOnly": {
                   "title": "In store only",
                   "description": "Shown without an online link.",

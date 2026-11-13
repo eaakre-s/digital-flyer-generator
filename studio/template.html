@@ -2713,6 +2713,7 @@ function renderInspectorBody() {
   body.append(el('label', { className: 'check' }, reviewed, ' Reviewed: this box is right (hides its warnings)'));
   if (h.note) body.append(el('div', { className: 'note', textContent: `Claude: ${h.note}` }));
   if (rangeOnly(h)) body.append(el('div', { className: 'note', textContent: `Its item-list line covers a whole range, so it links to the listing below, not a product.${listsSale(h) && h.fallback.onSale ? ' It prints a discount, so the listing shows only products on sale; untick On sale only to list the whole range.' : ''} Type a bean above to show one product instead.` }));
+  if (h.links?.length) body.append(el('div', { className: 'note', textContent: `Panel links set in Amplience, kept when the flyer is saved: ${h.links.map((l) => l.label).join(', ')}. Change them in the Digital Flyer item.` }));
   if (noProduct(h) && !h.reviewed) body.append(el('div', { className: 'note', textContent: `No product yet, so this box is marked to check. Link one (${mcp ? 'Find in AS400 below, ' : ''}the item list, or a bean typed above), or tick Reviewed to let the importer find the product by its name and price.` }));
   const missing = missingBeans(h);
   if (missing.length) {
@@ -3136,6 +3137,7 @@ function flyerData() {
       imageName: imageName(d.campaign, p, i), ...(p.replaces ? { replaces: p.replaces } : {}),
       hotspots: p.hotspots.map((h) => ({
         label: h.label, priceText: h.priceText, ...(h.description ? { description: h.description } : {}), ...(h.buttonText ? { buttonText: h.buttonText } : {}),
+        ...panelLinksOf(h),
         box: h.box, skus: (h.skus || []).map(normalizeSku), objectIds: h.beans?.length ? h.beans : h.objectIds || [], fallback: forKind(toLink(h.fallback, h.label), linkKindOf(h)), ...(rangeOnly(h) ? { wholeRange: true } : {}), inStoreOnly: !!h.inStoreOnly, locked: h.locked, confidence: lowConfidence(h) ? 'low' : 'high',
       })),
     })),
@@ -3527,13 +3529,26 @@ function resetDeletePage() { deletingPage = -1; $('deletePageBtn').textContent =
 // The importer extension's "Export for Flyer Studio" saves a Digital Flyer item's pages in this
 // Studio's export format, with the edits made in Amplience. Loading it replaces the hotspots on the
 // pages it names, matched by image name (or by place, when no name matches and the page counts agree).
+
+/**
+ * A box's panel links and their heading, cleaned: extra links at the bottom of its product panel on the
+ * site. They are set in the Digital Flyer item; Studio only keeps them, so an export doesn't drop them.
+ */
+function panelLinksOf(raw) {
+  const text = (v) => String(v || '').trim();
+  const links = (Array.isArray(raw?.links) ? raw.links : [])
+    .map((l) => ({ label: text(l?.label), link: toLink(l?.link), ...(text(l?.ariaLabel) ? { ariaLabel: text(l.ariaLabel) } : {}), ...(text(l?.clickId) ? { clickId: text(l.clickId) } : {}) }))
+    .filter((l) => l.label);
+  return { ...(text(raw?.linksTitle) ? { linksTitle: text(raw.linksTitle) } : {}), ...(links.length ? { links } : {}) };
+}
+
 function fromAmplience(raw) {
   const text = (v) => String(v || '').trim();
   const box = raw?.box || {};
   const x = clamp(Number(box.x) || 0, 0, 100), y = clamp(Number(box.y) || 0, 0, 100);
   const label = text(raw?.label);
   return {
-    id: newId('h'), label, priceText: text(raw?.priceText), description: text(raw?.description), ...(text(raw?.buttonText) ? { buttonText: text(raw.buttonText) } : {}), brand: '',
+    id: newId('h'), label, priceText: text(raw?.priceText), description: text(raw?.description), ...(text(raw?.buttonText) ? { buttonText: text(raw.buttonText) } : {}), ...panelLinksOf(raw), brand: '',
     box: { x: round1(x), y: round1(y), w: round1(clamp(Number(box.w) || 0, 1, 100 - x)), h: round1(clamp(Number(box.h) || 0, 1, 100 - y)) },
     textItemIds: [], offerIds: [], skus: (Array.isArray(raw?.skus) ? raw.skus : []).map((s) => normalizeSku(text(s))).filter(Boolean),
     beans: (Array.isArray(raw?.objectIds) ? raw.objectIds : []).map(text).filter(Boolean), objectIds: [],
