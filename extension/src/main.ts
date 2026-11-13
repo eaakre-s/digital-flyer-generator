@@ -2,7 +2,18 @@ import { init } from 'dc-extensions-sdk';
 import type { ContentFieldExtension } from 'dc-extensions-sdk';
 import { copyText } from './copy';
 import { devSdk } from './dev-sdk';
-import { buildPages, findImage, parseStudioExport, type FlyerPage, type ImageLink, type MediaSettings, type StudioFlyer } from './flyer';
+import {
+  buildPages,
+  findImage,
+  importedBytes,
+  PAGES_BUDGET_BYTES,
+  parseStudioExport,
+  splitPages,
+  type FlyerPage,
+  type ImageLink,
+  type MediaSettings,
+  type StudioFlyer,
+} from './flyer';
 import { openEditor, refreshEditor } from './editor';
 import { brandSpellings, linkBrands, type BrandSpellings } from './facets';
 import { countByStatus, matchProducts, renderProducts, withChosenSkus, type Matches } from './products';
@@ -16,6 +27,11 @@ const CHECKS_AT_ONCE = 6;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const state: {
+  /** The whole Flyer Studio export. */
+  source: StudioFlyer | null;
+  /** The export's pages being imported into this item, counted from 1. */
+  range: { from: number; to: number };
+  /** The export narrowed to those pages: what the steps below check and import. */
   flyer: StudioFlyer | null;
   status: ImageStatus[];
   images: (ImageLink | null)[];
@@ -27,6 +43,8 @@ const state: {
   readOnly: boolean;
   run: number;
 } = {
+  source: null,
+  range: { from: 1, to: 1 },
   flyer: null,
   status: [],
   images: [],
@@ -135,7 +153,7 @@ function renderPages() {
   flyer.pages.forEach((page, i) => {
     const status = state.status[i] ?? 'checking';
     const row = document.createElement('tr');
-    [String(i + 1), page.imageName, String(page.hotspots.length), STATUS_TEXT[status]].forEach((text, c) => {
+    [String(state.range.from + i), page.imageName, String(page.hotspots.length), STATUS_TEXT[status]].forEach((text, c) => {
       const td = Object.assign(document.createElement('td'), { textContent: text });
       if (c === 3) td.className = status === 'published' ? 'ok' : status === 'missing' ? 'warn' : 'muted';
       row.append(td);
@@ -204,6 +222,7 @@ function renderMatches() {
     reviewOnly: state.reviewOnly,
     readOnly: state.readOnly,
     spellings: state.brands?.spellings,
+    firstPage: state.range.from,
     onChange: renderMatches,
   });
 }
@@ -259,24 +278,94 @@ async function findProducts() {
 
 async function chooseFile(file: File) {
   try {
-    state.flyer = parseStudioExport(await file.text());
-    const hotspots = state.flyer.pages.reduce((n, page) => n + page.hotspots.length, 0);
-    setMessage(`Read ${file.name}: ${state.flyer.pages.length} pages, ${hotspots} hotspots.`, 'ok');
-    await showDetails(state.flyer);
+    state.source = parseStudioExport(await file.text());
+    const hotspots = state.source.pages.reduce((n, page) => n + page.hotspots.length, 0);
+    setMessage(`Read ${file.name}: ${state.source.pages.length} pages, ${hotspots} hotspots.`, 'ok');
+    await showDetails(state.source);
+    const [first] = splitPages(state.source.pages);
+    selectPages(first.from, first.to);
   } catch (error) {
+    state.source = null;
     state.flyer = null;
     setMessage((error as Error).message, 'error');
   }
+  checkSelection();
+}
+
+/** Narrows the import to pages `from` to `to` of the export, kept within its pages. */
+function selectPages(from: number, to: number) {
+  const source = state.source;
+  if (!source) return;
+  const last = source.pages.length;
+  const start = Math.min(Math.max(Math.round(from) || 1, 1), last);
+  const end = Math.min(Math.max(Math.round(to) || last, start), last);
+  state.range = { from: start, to: end };
+  state.flyer = { ...source, pages: source.pages.slice(start - 1, end) };
+}
+
+/** Checks the images and products of the pages now selected. */
+function checkSelection() {
+  renderRange();
   renderPages();
   checkImages();
   findProducts();
+}
+
+const kb = (bytes: number) => `${Math.round(bytes / 1000)} KB`;
+
+/** The page range, and whether those pages fit in one Amplience item; a flyer too big for one gets its split. */
+function renderRange() {
+  const source = state.source;
+  $('range').hidden = !source;
+  if (!source) return;
+  const { from, to } = state.range;
+  const fromInput = $('rangeFrom') as HTMLInputElement;
+  const toInput = $('rangeTo') as HTMLInputElement;
+  fromInput.max = toInput.max = String(source.pages.length);
+  fromInput.value = String(from);
+  toInput.value = String(to);
+  $('rangeOf').textContent = `of ${source.pages.length}`;
+
+  const bytes = importedBytes(state.flyer?.pages ?? []);
+  const runs = splitPages(source.pages);
+  const note = $('sizeNote');
+  note.dataset.kind = bytes > PAGES_BUDGET_BYTES ? 'error' : '';
+  const size =
+    bytes > PAGES_BUDGET_BYTES
+      ? `Pages ${from}–${to} come to about ${kb(bytes)}, more than one item holds, so Amplience won't save them.`
+      : `Pages ${from}–${to} come to about ${kb(bytes)}; one item holds up to 200 KB.`;
+  if (runs.length === 1) {
+    note.replaceChildren(size);
+    return;
+  }
+  const choices = runs.map((run) => {
+    const chosen = run.from === from && run.to === to;
+    const button = Object.assign(document.createElement('button'), {
+      type: 'button',
+      className: 'link',
+      textContent: `Pages ${run.from}–${run.to} (${kb(run.bytes)})`,
+      disabled: state.readOnly || chosen,
+    });
+    button.setAttribute('aria-pressed', String(chosen));
+    button.addEventListener('click', () => {
+      selectPages(run.from, run.to);
+      checkSelection();
+    });
+    return button;
+  });
+  note.replaceChildren(
+    `This flyer is too big for one Amplience item. Import pages ${runs[0].from}–${runs[0].to} into the flyer, ` +
+      `and each other set into its own Digital Flyer item, linked under More pages on the flyer: `,
+    ...choices.flatMap((button, i) => (i ? [' · ', button] : [button])),
+    `. ${size}`,
+  );
 }
 
 async function apply() {
   if (!state.flyer) return;
   // Amplience requires a product name on every hotspot and would reject the whole import.
   const unnamed = state.flyer.pages.flatMap((page, i) =>
-    page.hotspots.flatMap((h, j) => (h.label.trim() ? [] : [`page ${i + 1}, box ${j + 1}`])),
+    page.hotspots.flatMap((h, j) => (h.label.trim() ? [] : [`page ${state.range.from + i}, box ${j + 1}`])),
   );
   if (unnamed.length) {
     const one = unnamed.length === 1;
@@ -312,6 +401,9 @@ async function apply() {
 function setReadOnly(readOnly: boolean) {
   state.readOnly = readOnly;
   ($('fileInput') as HTMLInputElement).disabled = readOnly;
+  ($('rangeFrom') as HTMLInputElement).disabled = readOnly;
+  ($('rangeTo') as HTMLInputElement).disabled = readOnly;
+  renderRange();
   renderPages();
   renderMatches();
   refreshEditor();
@@ -338,6 +430,12 @@ async function start() {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) chooseFile(file);
   });
+  const changeRange = () => {
+    selectPages(Number(($('rangeFrom') as HTMLInputElement).value), Number(($('rangeTo') as HTMLInputElement).value));
+    checkSelection();
+  };
+  $('rangeFrom').addEventListener('change', changeRange);
+  $('rangeTo').addEventListener('change', changeRange);
   $('recheckBtn').addEventListener('click', checkImages);
   $('reviewToggle').addEventListener('click', () => {
     state.reviewOnly = !state.reviewOnly;

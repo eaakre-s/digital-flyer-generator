@@ -199,3 +199,45 @@ export const buildPages = (flyer: StudioFlyer, images: (ImageLink | null)[]): Fl
     const hotspots = page.hotspots.map(savedHotspot);
     return images[i] ? { image: images[i]!, hotspots } : { hotspots };
   });
+
+/** Amplience saves at most 200 KB in one content item; this leaves room for the item's other fields. */
+export const PAGES_BUDGET_BYTES = 190_000;
+// Each page's image link (asset id, name, endpoint, host), which the export doesn't carry yet.
+const IMAGE_LINK_BYTES = 250;
+
+export interface PageRange {
+  /** First and last page, counted from 1 and inclusive. */
+  from: number;
+  to: number;
+  bytes: number;
+}
+
+/** About how many bytes these pages take once imported into a Digital Flyer item. */
+export function importedBytes(pages: StudioPage[]): number {
+  const saved = pages.map((page) => ({ hotspots: page.hotspots.map(savedHotspot) }));
+  return new TextEncoder().encode(JSON.stringify(saved)).length + pages.length * IMAGE_LINK_BYTES;
+}
+
+/**
+ * The fewest runs of pages, each about the same size, that each fit in one item: one run when the whole flyer fits,
+ * otherwise the first goes in the flyer and the rest in the items linked under its More pages.
+ */
+export function splitPages(pages: StudioPage[]): PageRange[] {
+  const sizes = pages.map((page) => importedBytes([page]));
+  const total = sizes.reduce((sum, bytes) => sum + bytes, 0);
+  for (let count = Math.max(1, Math.ceil(total / PAGES_BUDGET_BYTES)); ; count++) {
+    const runs: PageRange[] = [];
+    let done = 0;
+    sizes.forEach((bytes, i) => {
+      const run = runs.at(-1);
+      if (run && done + bytes / 2 <= (total * runs.length) / count) {
+        run.to = i + 1;
+        run.bytes += bytes;
+      } else {
+        runs.push({ from: i + 1, to: i + 1, bytes });
+      }
+      done += bytes;
+    });
+    if (count >= sizes.length || runs.every((run) => run.bytes <= PAGES_BUDGET_BYTES)) return runs;
+  }
+}

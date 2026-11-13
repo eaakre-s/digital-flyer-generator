@@ -105,7 +105,7 @@
       button.danger:not(:disabled):hover { background: var(--bad); color: #fff; border-color: var(--bad); }
       #edDraw[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-      select, input[type='text'], input[type='search'], label.f input, label.f select {
+      select, input[type='text'], input[type='search'], input[type='number'], label.f input, label.f select {
         height: var(--field);
         padding: 0 10px;
         font: inherit;
@@ -116,8 +116,8 @@
         min-width: 0;
         transition: border-color 0.12s, box-shadow 0.12s;
       }
-      select:hover, input[type='text']:hover, input[type='search']:hover { border-color: var(--ink-3); }
-      select:focus, input[type='text']:focus, input[type='search']:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+      select:hover, input[type='text']:hover, input[type='search']:hover, input[type='number']:hover { border-color: var(--ink-3); }
+      select:focus, input[type='text']:focus, input[type='search']:focus, input[type='number']:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
       input::placeholder { color: var(--ink-3); }
       label.f { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink); flex: 1; min-width: 120px; }
       label.f input, label.f select, label.f textarea { font-weight: 400; }
@@ -138,6 +138,9 @@
       #message { min-height: 20px; font-size: 13px; }
       #message[data-kind='error'], #edStatus[data-kind='error'] { color: var(--bad); }
       #message[data-kind='ok'] { color: var(--ok); }
+      #range input { width: 72px; }
+      #sizeNote { margin: 8px 0 0; }
+      #sizeNote[data-kind='error'] { color: var(--bad); }
       #edStatus { margin-left: auto; }
       /* With a hotspot open, its panel shows the state; the toolbar copy stays only for screen readers. */
       #editor:has(#edInspector .savestate) #edStatus { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -430,6 +433,16 @@
       </div>
       <p id="message" role="status" aria-live="polite"></p>
       <ul id="details"></ul>
+      <div id="range" hidden>
+        <div class="row">
+          <label for="rangeFrom">Import pages<span class="sr"> from</span></label>
+          <input id="rangeFrom" type="number" min="1" step="1" inputmode="numeric" />
+          <label for="rangeTo"><span class="sr">Import pages up </span>to</label>
+          <input id="rangeTo" type="number" min="1" step="1" inputmode="numeric" />
+          <span id="rangeOf" class="muted"></span>
+        </div>
+        <p id="sizeNote" class="small" role="status" aria-live="polite"></p>
+      </div>
     </section>
 
     <section id="stepProducts" hidden>

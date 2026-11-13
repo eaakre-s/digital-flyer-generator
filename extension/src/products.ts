@@ -241,7 +241,14 @@ export function renderProducts(
   container: HTMLElement,
   flyer: StudioFlyer,
   matches: Matches,
-  options: { reviewOnly: boolean; readOnly: boolean; spellings?: BrandSpellings; onChange: () => void },
+  options: {
+    reviewOnly: boolean;
+    readOnly: boolean;
+    spellings?: BrandSpellings;
+    /** The export's number for the first page shown, when only some of its pages are imported. */
+    firstPage?: number;
+    onChange: () => void;
+  },
 ) {
   container.replaceChildren();
   flyer.pages.forEach((page, p) =>
@@ -255,7 +262,7 @@ export function renderProducts(
         el(
           'div',
           { className: 'phead' },
-          el('span', { className: 'muted', textContent: `p.${p + 1}` }),
+          el('span', { className: 'muted', textContent: `p.${p + (options.firstPage ?? 1)}` }),
           el('strong', { textContent: hotspot.label || 'Unnamed hotspot' }),
           el('span', { className: 'muted', textContent: hotspot.priceText }),
           el('span', { className: `chip ${match.status}`, textContent: STATUS_LABEL[match.status] }),

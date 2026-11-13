@@ -10,6 +10,19 @@
       "$ref": "http://bigcontent.io/cms/schema/v1/core#/definitions/content"
     }
   ],
+  "ui:component": {
+    "name": "tabs",
+    "params": {
+      "tabs": {
+        "defaultTab": "Flyer",
+        "items": [
+          { "label": "Settings", "pointers": ["/title", "/campaign", "/startDate", "/endDate", "/disclaimer", "/showWishlist"] },
+          { "label": "Flyer", "pointers": ["/pages", "/parts"] },
+          { "label": "Early Access", "pointers": ["/lock"] }
+        ]
+      }
+    }
+  },
 
   "type": "object",
   "properties": {
@@ -43,6 +56,94 @@
       "title": "Show Wishlist",
       "description": "Show wishlist button on inital product slideout",
       "type": "boolean"
+    },
+    "lock": {
+      "title": "Early access lock",
+      "description": "Like a product drop: until Lock End Time only the early access group sees the pages; everyone else sees the gate.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "title": "Lock until Lock End Time",
+          "type": "boolean"
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": { "const": false }
+        }
+      },
+      "then": {},
+      "else": {
+        "required": ["lockEndTime", "earlyAccessCustomerGroup"],
+        "properties": {
+          "lockEndTime": {
+            "title": "Lock End Time",
+            "description": "When the flyer opens to everyone. Drives the countdown and every {date} token.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "earlyAccessCustomerGroup": {
+            "title": "Early Access Customer Group",
+            "description": "MySCHEELS = every signed-in shopper. visaCardholder = signed-in SCHEELS Visa cardholders.",
+            "type": "string",
+            "enum": ["MySCHEELS", "visaCardholder"],
+            "default": "MySCHEELS"
+          },
+          "eyebrowText": {
+            "title": "Label",
+            "description": "Small line above the title on the gate and the early access banner, e.g. 'MySCHEELS preview'. Leave empty for no label.",
+            "type": "string",
+            "maxLength": 40,
+            "default": "MySCHEELS early access"
+          },
+          "showCountdown": {
+            "title": "Show countdown",
+            "description": "Days, hours and minutes to Lock End Time, in the early access banner and on the gate.",
+            "type": "boolean",
+            "default": true
+          },
+          "earlyAccessTitle": {
+            "title": "Early access heading",
+            "description": "Banner above the flyer for the early access group, e.g. 'Thank you for being a MySCHEELS customer!'",
+            "type": "string",
+            "maxLength": 120
+          },
+          "earlyAccessText": {
+            "title": "Early access text",
+            "description": "Under the heading, e.g. 'Everyone else sees it on {date}.' {date} becomes Lock End Time, e.g. Fri, Nov 20 at 8:00 AM CT.",
+            "type": "string",
+            "maxLength": 255
+          },
+          "gateImage": {
+            "title": "Gate image",
+            "description": "Shown in place of the flyer to everyone else. Bake any blur into the file; never use a readable flyer page.",
+            "allOf": [{ "$ref": "http://bigcontent.io/cms/schema/v1/core#/definitions/image-link" }]
+          },
+          "gateImageAlt": {
+            "title": "Gate image alt text",
+            "description": "Describe the image, including any words in it.",
+            "type": "string",
+            "maxLength": 255
+          },
+          "gateText": {
+            "title": "Gate text",
+            "description": "Under the gate image, e.g. 'Opens to everyone {date}.'",
+            "type": "string",
+            "maxLength": 255
+          },
+          "applyLinkLabel": {
+            "title": "Apply link label",
+            "description": "visaCardholder only: a link on the gate for signed-in shoppers who aren't cardholders. Leave empty for no link.",
+            "type": "string",
+            "maxLength": 50
+          },
+          "applyLink": {
+            "title": "Apply link",
+            "description": "Check Use Visa Apply Now Action for the SCHEELS Visa application, or set a page to link somewhere else. Empty = Apply Now action.",
+            "allOf": [{ "$ref": "https://scheels.com/partial/visa-apply-now-link#/definitions/link" }]
+          }
+        }
+      }
     },
     "pages": {
       "title": "Pages",
@@ -302,8 +403,20 @@
           }
         }
       }
+    },
+    "parts": {
+      "title": "More pages",
+      "description": "For a flyer too big for one item (Amplience saves at most 200 KB). Each linked Digital Flyer adds its pages after these, in order; only its pages are used, not its settings or lock. The importer suggests where to split.",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "allOf": [
+          { "$ref": "http://bigcontent.io/cms/schema/v1/core#/definitions/content-link" },
+          { "properties": { "contentType": { "enum": ["https://scheels.com/contentTypes/digital-flyer"] } } }
+        ]
+      }
     }
   },
   "required": ["pages"],
-  "propertyOrder": ["title", "campaign", "startDate", "endDate", "showWishlist", "disclaimer", "pages"]
+  "propertyOrder": ["title", "campaign", "startDate", "endDate", "showWishlist", "lock", "disclaimer", "pages", "parts"]
 }
