@@ -11,7 +11,7 @@ import {
 } from './ace';
 import { respellBrands, type BrandSpellings } from './facets';
 import type { Hotspot, StudioFlyer } from './flyer';
-import { fillFromProducts, linkPath } from './link';
+import { fillFromProducts, hasTarget, linkPath } from './link';
 
 /** One Match per hotspot, indexed [page][hotspot]. */
 export type Matches = Match[][];
@@ -81,8 +81,14 @@ const linkSource = (match: Match) => {
   return chosen.length ? chosen : match.candidates;
 };
 
-/** The hotspot's fallback link with the category and brand Scheels Search found filled in where empty. */
-export const filledFallback = (hotspot: Hotspot, match: Match) => fillFromProducts(hotspot.fallback, linkSource(match));
+/**
+ * The hotspot's fallback link. One that names a category, filter or search term is used as it is, as the site uses them
+ * in that order; an empty one gets the category and brand of the products found.
+ */
+export const filledFallback = (hotspot: Hotspot, match: Match) =>
+  hasTarget(hotspot.fallback) || hotspot.fallback.searchTerm
+    ? hotspot.fallback
+    : fillFromProducts(hotspot.fallback, linkSource(match));
 
 /** The fallback link the import saves: filled in from the products found, with brands spelled as Scheels Search spells them. */
 const savedFallback = (hotspot: Hotspot, match: Match, spellings?: BrandSpellings) =>
